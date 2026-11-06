@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  login          String   @unique
+  name           String
+  role           String   @default("NV")
+  active         Boolean  @default(true)
+  passwordHash   String?
+  legacySalt     String?
+  legacyHash     String?
+  sessionVersion Int      @default(1)
+  houses         UserHouse[]
+  accounts       UserAccount[]
+  sessions       Session[]
+  receipts       Receipt[] @relation("Creator")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model UserHouse {
+  userId String
+  houseCode String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, houseCode])
+}
+
+model UserAccount {
+  userId String
+  accountName String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, accountName])
+}
+
+model Session {
+  tokenHash String @id
+  userId String
+  version Int
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([expiresAt])
+}
+
+model House {
+  code String @id
+  name String @default("")
+  note String @default("")
+  active Boolean @default(true)
+  sheetFingerprint String?
+  updatedAt DateTime @updatedAt
+}
+
+model BankAccount {
+  name String @id
+  owner String @default("")
+  bank String @default("")
+  number String @default("")
+  note String @default("")
+  active Boolean @default(true)
+  sheetFingerprint String?
+  updatedAt DateTime @updatedAt
+}
+
+model Due {
+  id String @id @default(uuid())
+  month String
+  houseCode String
+  room String
+  amount BigInt
+  sheetRow Int?
+  sheetColumn Int?
+  syncedAt DateTime @default(now())
+  @@unique([month, houseCode, room])
+  @@index([month, houseCode])
+}
+
+model Receipt {
+  id String @id
+  month String
+  houseCode String
+  room String
+  collector String
+  payer String @default("")
+  amount BigInt
+  method String
+  accountName String?
+  receivedAt DateTime
+  transferAt DateTime?
+  transferMemo String @default("")
+  note String @default("")
+  status String @default("ACTIVE")
+  syncStatus String @default("PENDING")
+  source String @default("APP")
+  sheetRow Int?
+  sheetFingerprint String?
+  createdById String?
+  createdBy User? @relation("Creator", fields: [createdById], references: [id])
+  updatedById String?
+  version Int @default(1)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([month,houseCode,room,status])
+  @@index([method,accountName,transferAt])
+  @@index([syncStatus])
+}
+
+model Outbox {
+  id String @id @default(uuid())
+  receiptId String @unique
+  version Int
+  operation String
+  status String @default("PENDING")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  error String?
+  updatedAt DateTime @updatedAt
+}
+
+model CatalogOutbox {
+  key String @id
+  kind String
+  status String @default("PENDING")
+  attempts Int @default(0)
+  error String?
+  updatedAt DateTime @updatedAt
+}
+
+model Conflict {
+  id String @id @default(uuid())
+  entityType String
+  entityId String
+  reason String
+  localValue Json?
+  sheetValue Json?
+  resolved Boolean @default(false)
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  @@index([resolved,entityType])
+}
+
+model Audit {
+  id String @id @default(uuid())
+  actorId String?
+  actorLogin String
+  action String
+  entityId String?
+  before Json?
+  after Json?
+  createdAt DateTime @default(now())
+  @@index([entityId,createdAt])
+}
+
+model SyncState {
+  key String @id
+  value String
+  updatedAt DateTime @updatedAt
+}

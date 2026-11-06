@@ -1,0 +1,2 @@
+# Prisma Migrate checks this provider before applying SQL migrations.
+provider = "postgresql"

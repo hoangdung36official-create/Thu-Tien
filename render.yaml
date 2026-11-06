@@ -1,0 +1,132 @@
+# Deploy this Blueprint from a Git repository rooted at server-edition/.
+# All resources share Render's Singapore region and private network.
+databases:
+  - name: vincent-db
+    region: singapore
+    plan: 0.5c-1g
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+services:
+  - type: keyvalue
+    name: vincent-queue
+    region: singapore
+    plan: 256mb
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+
+  - type: pserv
+    name: vincent-api
+    runtime: docker
+    region: singapore
+    plan: starter
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    preDeployCommand: npm run db:migrate -w @vincent/api && npm run bootstrap -w @vincent/api -- --if-missing
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: APP_URL
+        fromService:
+          name: vincent-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vincent-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: vincent-queue
+          type: keyvalue
+          property: connectionString
+      - key: GOOGLE_SPREADSHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: INITIAL_ADMIN_LOGIN
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COLLECTIONS_ENABLED
+        value: "false"
+      - key: SHEET_POLL_SECONDS
+        value: "60"
+
+  - type: worker
+    name: vincent-worker
+    runtime: docker
+    region: singapore
+    plan: starter
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    dockerCommand: npm run start:worker -w @vincent/api
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        fromService:
+          name: vincent-api
+          type: pserv
+          envVarKey: APP_URL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vincent-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: vincent-queue
+          type: keyvalue
+          property: connectionString
+      - key: GOOGLE_SPREADSHEET_ID
+        fromService:
+          name: vincent-api
+          type: pserv
+          envVarKey: GOOGLE_SPREADSHEET_ID
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        fromService:
+          name: vincent-api
+          type: pserv
+          envVarKey: GOOGLE_SERVICE_ACCOUNT_EMAIL
+      - key: GOOGLE_PRIVATE_KEY
+        fromService:
+          name: vincent-api
+          type: pserv
+          envVarKey: GOOGLE_PRIVATE_KEY
+      - key: SESSION_SECRET
+        fromService:
+          name: vincent-api
+          type: pserv
+          envVarKey: SESSION_SECRET
+      - key: COLLECTIONS_ENABLED
+        value: "false"
+      - key: SHEET_POLL_SECONDS
+        value: "60"
+
+  - type: web
+    name: vincent-web
+    runtime: docker
+    region: singapore
+    plan: starter
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: API_INTERNAL_HOSTPORT
+        fromService:
+          name: vincent-api
+          type: pserv
+          property: hostport

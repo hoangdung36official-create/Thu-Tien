@@ -1,0 +1,11 @@
+{
+  "name": "vincent-server-edition",
+  "private": true,
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "dev:api": "npm run dev -w @vincent/api",
+    "dev:web": "npm run dev -w @vincent/web",
+    "build": "npm run build -w @vincent/api && npm run build -w @vincent/web",
+    "test": "npm run test -w @vincent/api"
+  }
+}
