@@ -75,9 +75,9 @@ services:
         value: production
       - key: APP_URL
         fromService:
-          name: vincent-api
-          type: pserv
-          envVarKey: APP_URL
+          name: vincent-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: DATABASE_URL
         fromDatabase:
           name: vincent-db
