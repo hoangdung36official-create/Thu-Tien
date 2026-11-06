@@ -6,6 +6,8 @@
 
 **Triển khai Render:** xem [hướng dẫn Render](docs/03-TRIEN-KHAI-RENDER.md). Tệp [`render.yaml`](render.yaml) tạo frontend HTTPS, API nội bộ, worker, PostgreSQL và Key Value tại Singapore. Tính năng thu tiền vẫn khóa cho đến khi đối soát Google Sheets.
 
+**Xem thử trên Vercel miễn phí:** xem [hướng dẫn Vercel Hobby](docs/04-VERCEL-MIEN-PHI.md). Bản này chỉ phù hợp cho mục đích cá nhân, phi thương mại; chưa có máy chủ API sẽ không đăng nhập hoặc ghi nhận thu tiền được.
+
 [**Mở biểu mẫu Deploy to Render cho repository Thu-Tien**](https://render.com/deploy?repo=https://github.com/hoangdung36official-create/Thu-Tien) — đăng nhập Render, kiểm tra phí của 5 dịch vụ và nhập các biến môi trường bí mật trong bảng điều khiển trước khi xác nhận triển khai.
 
 ## 1. Cấu trúc
