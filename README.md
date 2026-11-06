@@ -6,6 +6,8 @@
 
 **Triển khai Render:** xem [hướng dẫn Render](docs/03-TRIEN-KHAI-RENDER.md). Tệp [`render.yaml`](render.yaml) tạo frontend HTTPS, API nội bộ, worker, PostgreSQL và Key Value tại Singapore. Tính năng thu tiền vẫn khóa cho đến khi đối soát Google Sheets.
 
+[**Mở biểu mẫu Deploy to Render cho repository Thu-Tien**](https://render.com/deploy?repo=https://github.com/hoangdung36official-create/Thu-Tien) — đăng nhập Render, kiểm tra phí của 5 dịch vụ và nhập các biến môi trường bí mật trong bảng điều khiển trước khi xác nhận triển khai.
+
 ## 1. Cấu trúc
 
 | Vị trí | Nội dung |
