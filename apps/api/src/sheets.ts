@@ -2,13 +2,16 @@ import { google } from 'googleapis';
 import { env } from './env.js';
 import { SHEET_NAMES, fingerprint, readDues, readJournal, readJournalSafely, clean, key, fromSheetAmount } from './business.js';
 
-const auth = new google.auth.JWT({
-  email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
-const api = google.sheets({ version: 'v4', auth });
-const id = env.GOOGLE_SPREADSHEET_ID;
+function sheetsClient(){
+  if(!env.GOOGLE_SPREADSHEET_ID||!env.GOOGLE_SERVICE_ACCOUNT_EMAIL||!env.GOOGLE_PRIVATE_KEY)
+    throw new Error('Google Sheets chưa được cấu hình');
+  const auth = new google.auth.JWT({
+    email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  return {api:google.sheets({ version: 'v4', auth }),id:env.GOOGLE_SPREADSHEET_ID};
+}
 export const sheetRef = (tab: string, range: string) => `'${tab.replace(/'/g,"''")}'!${range}`;
 
 export type SheetSnapshot = {
@@ -27,6 +30,7 @@ export type SheetSnapshot = {
 };
 
 export async function verifySpreadsheet(): Promise<{title:string;tabIds:Record<string,number>}> {
+  const {api,id}=sheetsClient();
   const metadata=await api.spreadsheets.get({spreadsheetId:id,fields:'spreadsheetId,properties(title),sheets(properties(sheetId,title))'});
   if (metadata.data.spreadsheetId!==id) throw new Error('Spreadsheet ID phản hồi không trùng cấu hình');
   const tabIds: Record<string,number>={};
@@ -38,6 +42,7 @@ export async function verifySpreadsheet(): Promise<{title:string;tabIds:Record<s
 }
 
 export async function readSnapshot():Promise<SheetSnapshot> {
+  const {api,id}=sheetsClient();
   const {title,tabIds}=await verifySpreadsheet();
   const ranges=[sheetRef('NHẬP CẦN THU','A:ZZ'),sheetRef('NHẬT KÝ','A:M'),sheetRef('CÀI ĐẶT','A:M'),sheetRef('TÀI KHOẢN NHẬN','A:C'),sheetRef('PHÂN QUYỀN WEBAPP','A:J'),sheetRef('CẦN THU','B2')];
   const res=await api.spreadsheets.values.batchGet({spreadsheetId:id,ranges,valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
@@ -59,15 +64,19 @@ export async function readSnapshot():Promise<SheetSnapshot> {
 }
 
 export async function appendJournal(values:(string|number)[]):Promise<void>{
+  const {api,id}=sheetsClient();
   await api.spreadsheets.values.append({spreadsheetId:id,range:sheetRef('NHẬT KÝ','A:M'),valueInputOption:'RAW',insertDataOption:'INSERT_ROWS',requestBody:{values:[values]}});
 }
 export async function replaceJournalRow(row:number,values:(string|number)[]):Promise<void>{
+  const {api,id}=sheetsClient();
   await api.spreadsheets.values.update({spreadsheetId:id,range:sheetRef('NHẬT KÝ',`A${row}:M${row}`),valueInputOption:'RAW',requestBody:{values:[values]}});
 }
 export async function deleteJournalRow(row:number,tabId:number):Promise<void>{
+  const {api,id}=sheetsClient();
   await api.spreadsheets.batchUpdate({spreadsheetId:id,requestBody:{requests:[{deleteDimension:{range:{sheetId:tabId,dimension:'ROWS',startIndex:row-1,endIndex:row}}}]}});
 }
 export async function writeCatalog(kind:'house'|'account',row:number,value:{code?:string;name:string;note:string;active:boolean}):Promise<void>{
+  const {api,id}=sheetsClient();
   if(kind==='house'){
     await api.spreadsheets.values.batchUpdate({spreadsheetId:id,requestBody:{valueInputOption:'RAW',data:[
       {range:sheetRef('CÀI ĐẶT',`A${row}`),values:[[value.code||'']]},
@@ -79,6 +88,7 @@ export async function writeCatalog(kind:'house'|'account',row:number,value:{code
 }
 
 export async function readJournalLive():Promise<unknown[][]>{
+  const {api,id}=sheetsClient();
   const res=await api.spreadsheets.values.get({spreadsheetId:id,range:sheetRef('NHẬT KÝ','A:M'),valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
   return (res.data.values||[]) as unknown[][];
 }

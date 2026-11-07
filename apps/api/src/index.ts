@@ -319,7 +319,7 @@ app.post('/api/admin/accounts',async req=>{
 
 app.get('/api/admin/sync',async()=>{
   const [state,outbox,catalog,conflicts]=await Promise.all([db.syncState.findMany(),db.outbox.groupBy({by:['status'],_count:true}),db.catalogOutbox.findMany(),db.conflict.findMany({where:{resolved:false},orderBy:{createdAt:'desc'},take:100})]);
-  return {binding:env.GOOGLE_SPREADSHEET_ID,collectionsEnabled:env.COLLECTIONS_ENABLED==='true',state,outbox,catalog,conflicts};
+  return {binding:env.GOOGLE_SPREADSHEET_ID||null,collectionsEnabled:env.COLLECTIONS_ENABLED==='true',state,outbox,catalog,conflicts};
 });
 app.post('/api/admin/sync/run',async()=>runSyncCycle());
 app.get('/api/admin/sync/verify',async()=>verifySpreadsheet());

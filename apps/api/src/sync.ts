@@ -5,6 +5,10 @@ import { appendJournal, deleteJournalRow, readJournalLive, readSnapshot, replace
 import type { Receipt } from '@prisma/client';
 
 const LOCK=keyScope+'sync-lock';
+function spreadsheetId(){
+  if(!env.GOOGLE_SPREADSHEET_ID) throw new Error('Google Sheets chưa được cấu hình');
+  return env.GOOGLE_SPREADSHEET_ID;
+}
 function receiptPayload(r:Receipt) {return {
   month:r.month,houseCode:r.houseCode,room:r.room,collector:r.collector,payer:r.payer,amount:r.amount,
   method:r.method,accountName:r.accountName,receivedAt:r.receivedAt,transferAt:r.transferAt,transferMemo:r.transferMemo,note:r.note,
@@ -32,11 +36,12 @@ async function conflict(entityType:string,entityId:string,reason:string,localVal
   if(entityType==='receipt') await db.receipt.updateMany({where:{id:entityId,...(expectedVersion!==undefined?{version:expectedVersion,syncStatus:{in:['PENDING','FAILED']}}:{})},data:{syncStatus:'CONFLICT'}});
 }
 export async function assertBinding() {
+  const id=spreadsheetId();
   const current=await db.syncState.findUnique({where:{key:'spreadsheetId'}});
-  if(current && current.value!==env.GOOGLE_SPREADSHEET_ID) throw new Error('Database đã gắn bảng tính khác; cần database riêng cho Spreadsheet ID mới');
-  if(!current) await db.syncState.create({data:{key:'spreadsheetId',value:env.GOOGLE_SPREADSHEET_ID}}).catch(async(e)=>{
+  if(current && current.value!==id) throw new Error('Database đã gắn bảng tính khác; cần database riêng cho Spreadsheet ID mới');
+  if(!current) await db.syncState.create({data:{key:'spreadsheetId',value:id}}).catch(async(e)=>{
     const now=await db.syncState.findUnique({where:{key:'spreadsheetId'}});
-    if(now?.value!==env.GOOGLE_SPREADSHEET_ID) throw e;
+    if(now?.value!==id) throw e;
   });
 }
 
@@ -142,7 +147,7 @@ export async function flushOutbox(assertLease:()=>void=()=>{}){
       const matches=rows.slice(1).flatMap((row,i)=>String(row[10]??'').trim()===r.id?[{row,i:i+2}]:[]);
       if(matches.length>1) throw new Error('Trùng mã giao dịch K trong Google Sheets');
       const found=matches[0];
-      const before=found?readJournal(found.row,found.i,env.GOOGLE_SPREADSHEET_ID):null;
+      const before=found?readJournal(found.row,found.i,spreadsheetId()):null;
       if(found&&!before) throw new Error('Hàng nguồn có nội dung không đọc được');
       const sameRemote=before?sameReceipt(receiptPayload(r),remotePayload(before)):false;
       // A previous write may have succeeded just before a network failure.
@@ -161,7 +166,7 @@ export async function flushOutbox(assertLease:()=>void=()=>{}){
           const matching=latest.slice(1).flatMap((row,i)=>String(row[10]??'').trim()===r.id?[{row,i:i+2}]:[]);
           if(matching.length>1) throw new Error('Trùng mã giao dịch K trong Google Sheets');
           if(matching.length){
-            const checked=readJournal(matching[0].row,matching[0].i,env.GOOGLE_SPREADSHEET_ID);
+            const checked=readJournal(matching[0].row,matching[0].i,spreadsheetId());
             if(!checked||(checked.sheetFingerprint!==r.sheetFingerprint&&!sameReceipt(receiptPayload(r),remotePayload(checked))))
               throw new Error('Xung đột: Sheets đã thay đổi trước thao tác xóa');
             assertLease();
@@ -180,7 +185,7 @@ export async function flushOutbox(assertLease:()=>void=()=>{}){
           const updated=await readJournalLive();
           const actual=updated.slice(1).flatMap((row,i)=>String(row[10]??'').trim()===r.id?[{row,i:i+2}]:[]);
           if(actual.length!==1) throw new Error('Không xác nhận được bản ghi duy nhất sau khi ghi');
-          const parsed=readJournal(actual[0].row,actual[0].i,env.GOOGLE_SPREADSHEET_ID);
+          const parsed=readJournal(actual[0].row,actual[0].i,spreadsheetId());
           if(!parsed||!sameReceipt(receiptPayload(r),remotePayload(parsed)))
             throw new Error('Bản ghi sau khi ghi không khớp giao dịch');
           actualRow=actual[0].i;actualFingerprint=parsed.sheetFingerprint;

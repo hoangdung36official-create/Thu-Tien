@@ -15,9 +15,9 @@
       ]
     },
     "api": {
-      "root": "apps/api/",
-      "framework": "fastify",
-      "buildCommand": "npm run db:generate && npm run build"
+      "root": ".",
+      "runtime": "container",
+      "entrypoint": "apps/api/Dockerfile"
     }
   },
   "rewrites": [
@@ -30,7 +30,7 @@
     "worker": {
       "root": ".",
       "entrypoint": "apps/api/Dockerfile",
-      "command": ["npm", "run", "start:worker", "-w", "@vincent/api"],
+      "command": ["sh", "-c", "npm run db:migrate -w @vincent/api && exec npm run start:worker -w @vincent/api"],
       "instances": { "sin1": 1 }
     }
   }

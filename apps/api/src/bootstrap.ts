@@ -6,7 +6,7 @@ import { assertBinding } from './sync.js';
 if(!env.INITIAL_ADMIN_LOGIN||!/^\+?\d{9,15}$/.test(env.INITIAL_ADMIN_LOGIN)||!env.INITIAL_ADMIN_PASSWORD||env.INITIAL_ADMIN_PASSWORD.length<10){
   throw new Error('Cấu hình INITIAL_ADMIN_LOGIN là số điện thoại và INITIAL_ADMIN_PASSWORD ít nhất 10 ký tự');
 }
-await assertBinding();
+if(env.GOOGLE_SPREADSHEET_ID) await assertBinding();
 const existing=await db.user.findUnique({where:{login:env.INITIAL_ADMIN_LOGIN}});
 if(existing?.passwordHash){
   if(!process.argv.includes('--if-missing')) throw new Error('Quản trị viên đã có mật khẩu; sử dụng giao diện quản trị để thay đổi');

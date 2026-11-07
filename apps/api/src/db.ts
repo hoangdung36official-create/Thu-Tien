@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { env } from './env.js';
 
 export const db = new PrismaClient();
-export const keyScope = `vincent:${env.GOOGLE_SPREADSHEET_ID}:`;
+export const keyScope = `vincent:${env.GOOGLE_SPREADSHEET_ID || 'unconfigured'}:`;
 
 export async function acquireLease(key:string,token:string,ttlMs:number){
   const expiresAt=new Date(Date.now()+ttlMs);
