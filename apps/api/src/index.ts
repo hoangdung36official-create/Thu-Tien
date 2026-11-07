@@ -379,5 +379,5 @@ app.setErrorHandler((err,req,reply)=>{
   reply.code(status).send({error:validation?'Dữ liệu gửi lên không hợp lệ':prismaConflict?'Xung đột thao tác; vui lòng thử lại':status>=500?'Lỗi máy chủ':error.message});
 });
 
-await assertBinding();
+if(env.GOOGLE_SPREADSHEET_ID) await assertBinding();
 await app.listen({port:env.PORT,host:'0.0.0.0'});
