@@ -17,7 +17,7 @@
     "api": {
       "root": ".",
       "runtime": "container",
-      "entrypoint": "apps/api/Dockerfile"
+      "entrypoint": "Dockerfile.vercel-api"
     }
   },
   "rewrites": [
@@ -29,7 +29,7 @@
   "daemons": {
     "worker": {
       "root": ".",
-      "entrypoint": "apps/api/Dockerfile",
+      "entrypoint": "Dockerfile.vercel-api",
       "command": ["sh", "-c", "npm run db:migrate -w @vincent/api && exec npm run start:worker -w @vincent/api"],
       "instances": { "sin1": 1 }
     }
