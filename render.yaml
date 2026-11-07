@@ -8,14 +8,6 @@ databases:
     ipAllowList: []
 
 services:
-  - type: keyvalue
-    name: vincent-queue
-    region: singapore
-    plan: 256mb
-    ipAllowList: []
-    maxmemoryPolicy: noeviction
-    persistenceMode: journal-snapshot
-
   - type: pserv
     name: vincent-api
     runtime: docker
@@ -37,11 +29,6 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: vincent-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: vincent-queue
-          type: keyvalue
           property: connectionString
       - key: GOOGLE_SPREADSHEET_ID
         sync: false
@@ -81,11 +68,6 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: vincent-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: vincent-queue
-          type: keyvalue
           property: connectionString
       - key: GOOGLE_SPREADSHEET_ID
         fromService:

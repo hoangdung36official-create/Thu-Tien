@@ -47,6 +47,22 @@ model Session {
   @@index([expiresAt])
 }
 
+model LoginAttempt {
+  key       String   @id
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+  @@index([expiresAt])
+}
+
+model Lease {
+  key       String   @id
+  token     String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+  @@index([expiresAt])
+}
+
 model House {
   code String @id
   name String @default("")

@@ -13,7 +13,6 @@ const schema = z.object({
   PORT: z.coerce.number().default(4000),
   APP_URL: z.string().url().default('http://localhost:3000'),
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
   GOOGLE_SPREADSHEET_ID: z.string().min(1),
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email(),
   GOOGLE_PRIVATE_KEY: z.string().min(10),

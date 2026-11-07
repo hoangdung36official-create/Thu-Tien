@@ -1,4 +1,4 @@
-import { db, redis, keyScope } from './db.js';
+import { acquireLease, db, keyScope, releaseLease, renewLease } from './db.js';
 import { env } from './env.js';
 import { catalogHasConflict, pendingRemoteHasConflict, journalValues, readJournal } from './business.js';
 import { appendJournal, deleteJournalRow, readJournalLive, readSnapshot, replaceJournalRow, writeCatalog, type SheetSnapshot } from './sheets.js';
@@ -272,15 +272,15 @@ export async function flushCatalog(assertLease:()=>void=()=>{}){
 
 export async function runSyncCycle(){
   const token=crypto.randomUUID();
-  const acquired=await redis.set(LOCK,token,'PX',600000,'NX');
+  const acquired=await acquireLease(LOCK,token,600000);
   if(!acquired) return {status:'BUSY'} as const;
   let leaseLost=false,renewing=false;
   const heartbeat=setInterval(async()=>{
     if(renewing)return;
     renewing=true;
     try{
-      const ok=await redis.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('pexpire',KEYS[1],600000) else return 0 end",1,LOCK,token);
-      if(ok!==1)leaseLost=true;
+      const ok=await renewLease(LOCK,token,600000);
+      if(!ok)leaseLost=true;
     }catch{leaseLost=true;}
     finally{renewing=false;}
   },45000);
@@ -299,7 +299,6 @@ export async function runSyncCycle(){
     return {status:'OK',dues:s.dues.length,receipts:s.journal.filter(Boolean).length,spreadsheetId:s.spreadsheetId} as const;
   } finally {
     clearInterval(heartbeat);
-    // The compare-and-delete script never releases another worker's renewed lock.
-    await redis.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end",1,LOCK,token);
+    await releaseLease(LOCK,token);
   }
 }

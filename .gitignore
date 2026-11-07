@@ -12,3 +12,6 @@ coverage/
 *credentials*.json
 *.zip
 backups/
+
+.vercel
+.env*

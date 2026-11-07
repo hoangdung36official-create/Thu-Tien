@@ -21,6 +21,7 @@ async function proxy(request: NextRequest, { params }: Context): Promise<Respons
   const headers = new Headers(request.headers);
   // Let the HTTP client set the upstream authority and body framing.
   for (const name of ['host', 'connection', 'content-length', 'transfer-encoding']) headers.delete(name);
+  headers.set('x-vincent-public-origin', request.nextUrl.origin);
 
   try {
     const response = await fetch(url, {

@@ -5,7 +5,7 @@ import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { BankAccount, Prisma, Receipt, User } from '@prisma/client';
-import { db, redis, keyScope } from './db.js';
+import { acquireLease, db, keyScope, releaseLease } from './db.js';
 import { cookieSecure, env } from './env.js';
 import { balance, checkAmount, clean, key, monthValid, newReceiptId, parseDate, safeNumber, sum, vnd, dayText } from './business.js';
 import { makePdf, makeZip, type ReportGroup } from './reports.js';
@@ -23,6 +23,18 @@ const currentDate=()=>{
   const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   return parseDate(parts)!;
 };
+async function registerLoginAttempt(limitKey:string){
+  const now=new Date(),expiresAt=new Date(Date.now()+15*60000);
+  return db.$transaction(async tx=>{
+    const prior=await tx.loginAttempt.findUnique({where:{key:limitKey}});
+    if(!prior||prior.expiresAt<=now){
+      const row=await tx.loginAttempt.upsert({where:{key:limitKey},create:{key:limitKey,attempts:1,expiresAt},update:{attempts:1,expiresAt}});
+      return row.attempts;
+    }
+    const row=await tx.loginAttempt.update({where:{key:limitKey},data:{attempts:{increment:1}}});
+    return row.attempts;
+  },{isolationLevel:'Serializable'});
+}
 const ident=(u:User & {houses:{houseCode:string}[];accounts:{accountName:string}[]}):Identity=>({id:u.id,login:u.login,name:u.name,role:u.role,
   houses:u.houses.map(h=>h.houseCode),accounts:u.accounts.map(a=>a.accountName)});
 const all=(u:Identity)=>u.role==='ADMIN';
@@ -73,7 +85,9 @@ app.addHook('onRequest',async(request,reply)=>{
   if(!url.startsWith('/api/')||url==='/api/health'||url==='/api/auth/login')return;
   if(!['GET','HEAD','OPTIONS'].includes(request.method)){
     const origin=request.headers.origin;
-    if(origin&&origin!==new URL(env.APP_URL).origin){reply.code(403).send({error:'Nguồn gửi yêu cầu không hợp lệ'});return;}
+    const forwardedOrigin=request.headers['x-vincent-public-origin'];
+    const allowedOrigin=typeof forwardedOrigin==='string'&&forwardedOrigin?forwardedOrigin:new URL(env.APP_URL).origin;
+    if(origin&&origin!==allowedOrigin){reply.code(403).send({error:'Nguồn gửi yêu cầu không hợp lệ'});return;}
     if(request.headers['sec-fetch-site']==='cross-site'){reply.code(403).send({error:'Yêu cầu khác nguồn bị từ chối'});return;}
   }
   const sessionId=request.cookies.vincent_session;
@@ -93,11 +107,11 @@ app.get('/api/health',async()=>{await db.$queryRaw`SELECT 1`;return {ok:true,ser
 app.post('/api/auth/login',async(req,reply)=>{
   const body=input(z.object({login:z.string().trim().min(3),password:z.string().min(1)}),req.body);
   const limitKey=keyScope+'login:'+createHash('sha256').update(req.ip+':'+body.login).digest('hex');
-  const attempts=await redis.incr(limitKey);if(attempts===1)await redis.expire(limitKey,900);
+  const attempts=await registerLoginAttempt(limitKey);
   if(attempts>10)return reply.code(429).send({error:'Đăng nhập sai quá nhiều lần. Thử lại sau 15 phút.'});
   const user=await db.user.findUnique({where:{login:body.login},include:{houses:true,accounts:true}});
   if(!user?.active||!user.passwordHash||!await argon2.verify(user.passwordHash,body.password))return reply.code(401).send({error:'Số điện thoại hoặc mật khẩu không đúng'});
-  await redis.del(limitKey);
+  await db.loginAttempt.deleteMany({where:{key:limitKey}});
   const token=randomBytes(32).toString('base64url');
   await db.session.create({data:{tokenHash:tokenHash(token),userId:user.id,version:user.sessionVersion,expiresAt:new Date(Date.now()+7*86400000)}});
   reply.setCookie('vincent_session',token,{path:'/',httpOnly:true,secure:cookieSecure,sameSite:'strict',maxAge:7*86400});
@@ -312,7 +326,7 @@ app.get('/api/admin/sync/verify',async()=>verifySpreadsheet());
 app.post('/api/admin/sync/conflicts/:id/resolve',async req=>{
   const u=me(req),{id}=input(z.object({id:z.string()}),req.params),{strategy}=input(z.object({strategy:z.enum(['sheet','retry'])}),req.body);
   const lockName=keyScope+'sync-lock',lockToken=randomBytes(16).toString('hex');
-  const acquired=await redis.set(lockName,lockToken,'PX',180000,'NX');
+  const acquired=await acquireLease(lockName,lockToken,180000);
   if(!acquired)throw Object.assign(new Error('Đang đồng bộ; thử xử lý xung đột sau khi hoàn tất'),{statusCode:409});
   try{
     const c=await db.conflict.findUniqueOrThrow({where:{id}});
@@ -347,7 +361,7 @@ app.post('/api/admin/sync/conflicts/:id/resolve',async req=>{
     },{isolationLevel:'Serializable'});
     return {ok:true,strategy};
   }finally{
-    await redis.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end",1,lockName,lockToken);
+    await releaseLease(lockName,lockToken);
   }
 });
 app.get('/api/admin/audit',async req=>{

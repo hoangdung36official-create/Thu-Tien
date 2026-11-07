@@ -15,17 +15,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 15
-  redis:
-    image: redis:7-bookworm
-    command: ["redis-server","--appendonly","yes","--maxmemory","128mb","--maxmemory-policy","noeviction"]
-    restart: unless-stopped
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD","redis-cli","ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 15
   api:
     build:
       context: .
@@ -38,8 +27,6 @@ services:
     command: ["sh","-c","npm run db:migrate -w @vincent/api && npm run start -w @vincent/api"]
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -85,6 +72,5 @@ services:
       - api
 volumes:
   pgdata:
-  redisdata:
   caddy_data:
   caddy_config:
