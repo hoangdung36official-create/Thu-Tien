@@ -290,6 +290,37 @@ app.delete('/api/receipts/:id',async req=>{
   return {receipt:publicReceipt(r)};
 });
 
+app.get('/api/reports/staff',async req=>{
+  const u=me(req),q=input(z.object({month:z.string(),from:z.string().optional(),to:z.string().optional()}),req.query);
+  if(!monthValid(q.month))throw new Error('Tháng không hợp lệ');
+  const fromDate=q.from?parseDate(q.from,true):null,toDate=q.to?parseDate(q.to,true):null;
+  if(fromDate&&toDate&&fromDate>toDate)throw new Error('Khoảng ngày thu không hợp lệ');
+  const [receipts,activeStaff]=await Promise.all([
+    db.receipt.findMany({
+      where:{...scopeReceipt(u),status:'ACTIVE',month:q.month,...(fromDate||toDate?{receivedAt:{...(fromDate?{gte:fromDate}:{}),...(toDate?{lte:toDate}:{})}}:{})},
+      select:{amount:true,method:true,collector:true,createdBy:{select:{id:true,name:true,login:true,role:true}}},
+    }),
+    all(u)?db.user.findMany({where:{active:true,role:{in:['NV','KETOAN']}},select:{id:true,name:true,login:true,role:true}}):Promise.resolve([]),
+  ]);
+  type StaffRow={id:string;name:string;login:string;role:string;cash:bigint;transfer:bigint;total:bigint;cashCount:number;transferCount:number;count:number};
+  const rows=new Map<string,StaffRow>();
+  const ensure=(id:string,name:string,login:string,role:string)=>{
+    let row=rows.get(id);
+    if(!row){row={id,name,login,role,cash:0n,transfer:0n,total:0n,cashCount:0,transferCount:0,count:0};rows.set(id,row);}
+    return row;
+  };
+  for(const staff of activeStaff)ensure(staff.id,staff.name,staff.login,staff.role);
+  for(const receipt of receipts){
+    const creator=receipt.createdBy;
+    const legacyName=clean(receipt.collector)||'Nhân viên lịch sử';
+    const row=creator?ensure(creator.id,creator.name,creator.login,creator.role):ensure('legacy:'+legacyName,legacyName,'','LEGACY');
+    row.total+=receipt.amount;row.count++;
+    if(receipt.method==='Chuyển khoản'){row.transfer+=receipt.amount;row.transferCount++;}else{row.cash+=receipt.amount;row.cashCount++;}
+  }
+  const employees=[...rows.values()].sort((a,b)=>Number(b.total-a.total)||a.name.localeCompare(b.name,'vi')).map(row=>({...row,cash:safeNumber(row.cash),transfer:safeNumber(row.transfer),total:safeNumber(row.total)}));
+  return {employees,totals:{cash:safeNumber(sum([...rows.values()].map(r=>r.cash))),transfer:safeNumber(sum([...rows.values()].map(r=>r.transfer))),total:safeNumber(sum([...rows.values()].map(r=>r.total))),count:[...rows.values()].reduce((n,r)=>n+r.count,0)}};
+});
+
 app.get('/api/reports/transfers',async(req,reply)=>{
   const u=me(req),q=input(z.object({month:z.string().optional(),from:z.string().optional(),to:z.string().optional(),house:z.string().optional(),room:z.string().optional(),collector:z.string().optional(),accountNames:z.string().optional(),status:z.enum(['ACTIVE','DELETED']).default('ACTIVE'),format:z.enum(['json','pdf','zip']).default('json')}),req.query);
   const allowed=q.accountNames?.split(',').map(clean).filter(Boolean);
