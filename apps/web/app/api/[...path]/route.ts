@@ -6,24 +6,29 @@ export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: NextRequest, { params }: Context): Promise<Response> {
-  const { path } = await params;
-  // A Vercel preview has no local Fastify service. Avoid forwarding sensitive
-  // login requests to localhost when an external backend is not configured.
-  if (process.env.VERCEL && !process.env.API_INTERNAL_URL) {
-    return Response.json(
-      { error: 'Bản xem thử chưa kết nối máy chủ dữ liệu. Quản trị viên cần cấu hình API_INTERNAL_URL.' },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } },
-    );
-  }
-  const hostport = process.env.API_INTERNAL_HOSTPORT;
-  const upstream = process.env.API_INTERNAL_URL || (hostport ? `http://${hostport}` : 'http://127.0.0.1:4000');
-  const url = new URL(`/api/${path.map(encodeURIComponent).join('/')}${request.nextUrl.search}`, upstream);
-  const headers = new Headers(request.headers);
-  // Let the HTTP client set the upstream authority and body framing.
-  for (const name of ['host', 'connection', 'content-length', 'transfer-encoding']) headers.delete(name);
-  headers.set('x-vincent-public-origin', request.nextUrl.origin);
-
   try {
+    const { path } = await params;
+    const rawUrl = process.env.API_INTERNAL_URL?.trim();
+    const rawHostport = process.env.API_INTERNAL_HOSTPORT?.trim();
+    const candidates = [rawUrl, rawHostport ? `http://${rawHostport}` : undefined, process.env.VERCEL ? undefined : 'http://127.0.0.1:4000'].filter((value): value is string => !!value);
+    let upstream: URL | null = null;
+    for (const candidate of candidates) {
+      try {
+        upstream = new URL(candidate.includes('://') ? candidate : `http://${candidate}`);
+        break;
+      } catch {}
+    }
+    if (!upstream) {
+      return Response.json(
+        { error: 'Máy chủ dữ liệu chưa có địa chỉ kết nối hợp lệ' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    const url = new URL(`/api/${path.map(encodeURIComponent).join('/')}${request.nextUrl.search}`, upstream);
+    const headers = new Headers(request.headers);
+    // Let the HTTP client set the upstream authority and body framing.
+    for (const name of ['host', 'connection', 'content-length', 'transfer-encoding']) headers.delete(name);
+    headers.set('x-vincent-public-origin', request.nextUrl.origin);
     const response = await fetch(url, {
       method: request.method,
       headers,
