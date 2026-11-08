@@ -16,8 +16,8 @@ export async function makePdf(groups:ReportGroup[],filter:{month?:string;from?:s
   const font=env.PDF_FONT_PATH||'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
   const bold=env.PDF_FONT_BOLD_PATH||'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
   doc.registerFont('normal',font).registerFont('bold',bold);
-  const w=doc.page.width-70, cols=[32,92,68,53,137,260,129], starts=cols.map((_,i)=>35+cols.slice(0,i).reduce((a,b)=>a+b,0));
-  const labels=['STT','Ngày chuyển','Tòa nhà','Phòng','Người nộp','Nội dung chuyển khoản','Số tiền'];
+  const w=doc.page.width-70, cols=[34,100,82,58,365,132], starts=cols.map((_,i)=>35+cols.slice(0,i).reduce((a,b)=>a+b,0));
+  const labels=['STT','Ngày chuyển','Tòa nhà','Phòng','Nội dung chuyển khoản','Số tiền'];
   function header(){
     doc.font('bold').fontSize(17).fillColor('#142b40').text('VINCENT  /  BÁO CÁO CHUYỂN KHOẢN',35,36);
     doc.font('normal').fontSize(9).fillColor('#5d6875').text(dateRange(filter),35,64);
@@ -42,7 +42,7 @@ export async function makePdf(groups:ReportGroup[],filter:{month?:string;from?:s
     tableHeader();
     for(let i=0;i<group.receipts.length;i++){
       const r=group.receipts[i];
-      const fields=[String(i+1),dayText(r.transferAt),r.houseCode,r.room,r.payer||'—',r.transferMemo||'—',currency(r.amount)];
+      const fields=[String(i+1),dayText(r.transferAt),r.houseCode,r.room,r.transferMemo||'—',currency(r.amount)];
       let remaining=fields.slice(),part=0;
       // A single transfer memo may be longer than one page. Split each
       // column into measured fragments so that none is silently clipped.
@@ -52,7 +52,7 @@ export async function makePdf(groups:ReportGroup[],filter:{month?:string;from?:s
         const available=doc.page.height-62-doc.y-12;
         const fragments=remaining.map((value,j)=>{
           if(!value)return '';
-          const options={width:cols[j]-8,align:j===6?'right' as const:'left' as const};
+          const options={width:cols[j]-8,align:j===5?'right' as const:'left' as const};
           if(doc.heightOfString(value,options)<=available)return value;
           const chars=Array.from(value);
           let low=0,high=chars.length;
@@ -63,11 +63,11 @@ export async function makePdf(groups:ReportGroup[],filter:{month?:string;from?:s
           }
           return chars.slice(0,Math.max(1,low)).join('');
         });
-        const rowH=Math.max(25,...fragments.map((v,j)=>v?doc.heightOfString(v,{width:cols[j]-8,align:j===6?'right':'left'})+12:0));
+        const rowH=Math.max(25,...fragments.map((v,j)=>v?doc.heightOfString(v,{width:cols[j]-8,align:j===5?'right':'left'})+12:0));
         if(doc.y+rowH>doc.page.height-62){newPage();continue;}
         const y=doc.y;
         if(i%2)doc.rect(35,y,w,rowH).fill('#f7f9fb');
-        fragments.forEach((v,j)=>doc.font('normal').fontSize(8).fillColor('#203346').text(v,starts[j]+4,y+6,{width:cols[j]-8,align:j===6?'right':'left'}));
+        fragments.forEach((v,j)=>doc.font('normal').fontSize(8).fillColor('#203346').text(v,starts[j]+4,y+6,{width:cols[j]-8,align:j===5?'right':'left'}));
         doc.y=y+rowH;
         doc.moveTo(35,doc.y).lineTo(35+w,doc.y).lineWidth(.3).stroke('#d7dfe5');
         remaining=remaining.map((v,j)=>v.slice(fragments[j].length));

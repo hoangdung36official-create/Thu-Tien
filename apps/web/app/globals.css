@@ -26,6 +26,67 @@
 @media(max-width:900px){.collection-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.collection-grid{grid-template-columns:1fr}.report-intro{display:grid;gap:14px}.report-kpi{min-width:0;text-align:left}.report-panel{padding:17px 14px}.report-group{padding:0 10px 8px}.collect-surface .section-title{display:grid}}
 
+@media(max-width:650px){
+  .report-staff,.report-panel,.report-results{padding:15px 12px}
+  .report-staff .section-title,.report-results .section-title{margin-bottom:12px}
+  .report-summary-grid{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:13px}
+  .report-summary-card{padding:12px 11px;border-radius:10px;gap:2px}
+  .report-summary-card.featured{grid-column:1/-1}
+  .report-summary-card strong{font-size:18px}
+  .report-summary-card span{font-size:9px;line-height:1.35}
+  .report-staff-toolbar{gap:10px;padding-top:12px;margin-bottom:12px}
+  .report-staff-toolbar>div:first-child small{display:none}
+  .report-staff-controls{grid-template-columns:1fr 1fr;gap:8px}
+  .report-staff-controls label:first-child{grid-column:1/-1}
+  .staff-mix-chart{padding:12px;margin-bottom:12px;border-radius:10px}
+  .staff-mix-head{gap:8px;margin-bottom:8px}
+  .staff-mix-head small{display:none}
+  .staff-mix-row{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:8px 0}
+  .staff-mix-label{grid-column:1/2}
+  .staff-mix-values{grid-column:2/3;grid-row:1;align-self:center;gap:7px}
+  .staff-mix-track{grid-column:1/-1;height:9px}
+  .staff-mix-values span:first-child::after,.staff-mix-values span:last-child::after{content:''}
+  .report-intro{gap:11px;padding-bottom:14px;margin-bottom:14px}
+  .report-intro>div:first-child>p:last-child{font-size:10px;line-height:1.5}
+  .report-kpis{gap:7px}
+  .report-kpi{padding:11px 10px;border-radius:10px}
+  .report-kpi strong,.report-kpi.compact strong{font-size:17px}
+  .report-kpi span{font-size:9px}
+  .report-filters{gap:8px}
+  .report-account-filter{margin-top:13px;padding:10px;border-radius:10px}
+  .report-account-head{gap:7px;margin-bottom:8px}
+  .report-account-actions{gap:0}
+  .report-account-search{margin-bottom:8px}
+  .report-account-filter .report-accounts{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:170px}
+  .report-account-filter .check-pill{min-width:0;min-height:43px;padding:7px 8px;gap:7px}
+  .export-bar{gap:8px;margin-top:14px}
+  .export-bar .primary,.export-bar .secondary{min-height:40px;padding:8px 11px}
+  .report-group{margin-top:9px;border-radius:10px}
+  .report-account{padding:9px 0 11px;gap:8px}
+  .report-total strong{font-size:14px}
+  .mobile-card-table{overflow:visible}
+  .mobile-card-table table,.mobile-card-table tbody{display:block;width:100%}
+  .mobile-card-table thead{display:none}
+  .mobile-card-table tbody{display:grid;gap:8px}
+  .mobile-card-table tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;border:1px solid #e2e9ed;border-radius:10px;background:#fff;padding:10px}
+  .mobile-card-table td{display:block;border:0!important;padding:0!important;min-width:0;font-size:11px;white-space:normal}
+  .mobile-card-table td::before{display:block;color:#81929e;font-size:9px;font-weight:650;margin-bottom:2px}
+  .staff-report-table td:nth-child(1){grid-column:1/-1}
+  .staff-report-table td:nth-child(1)::before{content:'Nhân viên'}
+  .staff-report-table td:nth-child(2)::before{content:'Vai trò'}
+  .staff-report-table td:nth-child(3)::before{content:'Tiền mặt'}
+  .staff-report-table td:nth-child(4)::before{content:'Chuyển khoản'}
+  .staff-report-table td:nth-child(5)::before{content:'Tổng thu'}
+  .staff-report-table td:nth-child(6)::before{content:'Giao dịch'}
+  .transfer-report-table td:nth-child(1)::before{content:'Ngày chuyển'}
+  .transfer-report-table td:nth-child(2)::before{content:'Nhà / Phòng'}
+  .transfer-report-table td:nth-child(3){grid-column:1/-1}
+  .transfer-report-table td:nth-child(3)::before{content:'Nội dung'}
+  .transfer-report-table td:nth-child(4){grid-column:1/-1;text-align:right}
+  .transfer-report-table td:nth-child(4)::before{content:'Số tiền';text-align:left}
+  .transfer-report-table .memo-cell{max-width:none}
+}
+
 .collection-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 17px}
 .collection-stat{display:grid;gap:5px;padding:13px 15px;background:#f6f9fb;border:1px solid #e0e9ef;border-radius:11px;min-width:0}
 .collection-stat span{color:#6b8090;font-size:11px;font-weight:650}
