@@ -40,7 +40,8 @@ const ident=(u:User & {houses:{houseCode:string}[];accounts:{accountName:string}
 const all=(u:Identity)=>u.role==='ADMIN';
 const scopedHouse=(u:Identity,house:string)=>all(u)||u.houses.includes(house);
 const scopedAccount=(u:Identity,account:string)=>all(u)||u.accounts.includes(account);
-const scopeReceipt=(u:Identity):Prisma.ReceiptWhereInput=>all(u)?{}:{houseCode:{in:u.houses},createdById:u.id};
+const scopeReceipt=(u:Identity):Prisma.ReceiptWhereInput=>all(u)?{}:u.role==='KETOAN'?{houseCode:{in:u.houses}}:{houseCode:{in:u.houses},createdById:u.id};
+const canWriteReceipts=(u:Identity)=>u.role!=='KETOAN';
 const publicReceipt=(r:Receipt)=>({...r,amount:safeNumber(r.amount),receivedAt:dayText(r.receivedAt),transferAt:dayText(r.transferAt)});
 const obj=z.record(z.string(),z.unknown());
 function input<T extends z.ZodTypeAny>(schema:T,value:unknown):z.infer<T>{return schema.parse(value);}
@@ -157,7 +158,7 @@ app.get('/api/dashboard',async req=>{
     if(p>=d.amount)full++;else if(p>0n)partial++;else unpaid++;
     const curr=byHouse.get(d.houseCode)||{due:0n,paid:0n};curr.due+=d.amount;curr.paid+=p;byHouse.set(d.houseCode,curr);
   }
-  const visible=all(u)?receipts:receipts.filter(r=>r.createdById===u.id);
+  const visible=u.role==='NV'?receipts.filter(r=>r.createdById===u.id):receipts;
   const money=(rs:Receipt[])=>safeNumber(sum(rs.map(r=>r.amount)));
   const byAccounts=new Map<string,bigint>();for(const r of visible)if(r.method==='Chuyển khoản'&&r.accountName)byAccounts.set(r.accountName,(byAccounts.get(r.accountName)||0n)+r.amount);
   const byDays=new Map<string,bigint>();for(const r of visible){const d=dayText(r.receivedAt);byDays.set(d,(byDays.get(d)||0n)+r.amount);}
@@ -177,7 +178,7 @@ app.get('/api/receipts',async req=>{
 });
 
 app.post('/api/receipts',async req=>{
-  writable();const u=me(req),body=input(receiptInput,req.body),data=validateReceipt(body,u);
+  writable();const u=me(req);permission(canWriteReceipts(u));const body=input(receiptInput,req.body),data=validateReceipt(body,u);
   const id=body.id||newReceiptId();const receivedAt=body.receivedAt?parseDate(body.receivedAt,true)!:currentDate();
   const result=await db.$transaction(async tx=>{
     await lockRoom(tx,data.month,data.houseCode,data.room);
@@ -208,7 +209,7 @@ function sameRequest(r:Receipt,d:ReturnType<typeof validateReceipt>){
     r.accountName===d.accountName&&r.transferAt?.getTime()===d.transferAt?.getTime()&&r.transferMemo===d.transferMemo&&r.payer===d.payer&&r.note===d.note;
 }
 app.patch('/api/receipts/:id',async req=>{
-  writable();const u=me(req),{id}=input(z.object({id:z.string()}),req.params);
+  writable();const u=me(req);permission(canWriteReceipts(u));const {id}=input(z.object({id:z.string()}),req.params);
   const body=input(fields.extend({version:z.number().int().min(1)}),req.body),data=validateReceipt(body,u);
   const result=await db.$transaction(async tx=>{
     const old=await tx.receipt.findUnique({where:{id}});
@@ -226,7 +227,7 @@ app.patch('/api/receipts/:id',async req=>{
   return {receipt:publicReceipt(result)};
 });
 app.delete('/api/receipts/:id',async req=>{
-  writable();const u=me(req),{id}=input(z.object({id:z.string()}),req.params);
+  writable();const u=me(req);permission(canWriteReceipts(u));const {id}=input(z.object({id:z.string()}),req.params);
   const {version}=input(z.object({version:z.number().int().min(1)}),req.body);
   const r=await db.$transaction(async tx=>{
     const old=await tx.receipt.findUnique({where:{id}});
@@ -273,7 +274,7 @@ app.get('/api/admin/users',async()=>{
   const users=await db.user.findMany({include:{houses:true,accounts:true},orderBy:{name:'asc'}});
   return users.map(u=>({...ident(u),active:u.active,hasPassword:!!u.passwordHash}));
 });
-const userData=z.object({login:z.string().regex(/^\+?\d{9,15}$/),name:z.string().trim().min(2).max(100),password:z.string().min(10).optional(),role:z.enum(['ADMIN','NV']).default('NV'),active:z.boolean().default(true),houses:z.array(z.string()).default([]),accounts:z.array(z.string()).default([])});
+const userData=z.object({login:z.string().regex(/^\+?\d{9,15}$/),name:z.string().trim().min(2).max(100),password:z.string().min(10).optional(),role:z.enum(['ADMIN','NV','KETOAN']).default('NV'),active:z.boolean().default(true),houses:z.array(z.string()).default([]),accounts:z.array(z.string()).default([])});
 app.post('/api/admin/users',async req=>{
   const u=me(req),body=input(userData.extend({password:z.string().min(10)}),req.body);
   const hashed=await argon2.hash(body.password,{type:argon2.argon2id});
@@ -284,12 +285,12 @@ app.post('/api/admin/users',async req=>{
 });
 app.patch('/api/admin/users/:id',async req=>{
   const u=me(req),{id}=input(z.object({id:z.string()}),req.params),body=input(userData.partial().omit({login:true}),req.body);
-  if(body.role==='NV'&&id===u.id)throw new Error('Không thể tự hạ quyền admin');
+  if(body.role&&body.role!=='ADMIN'&&id===u.id)throw new Error('Không thể tự hạ quyền admin');
   if(body.active===false&&id===u.id)throw new Error('Không thể tự khóa tài khoản đang đăng nhập');
   const passwordHash=body.password?await argon2.hash(body.password,{type:argon2.argon2id}):undefined;
   await db.$transaction(async tx=>{
     const existing=await tx.user.findUniqueOrThrow({where:{id}});
-    if(existing.active&&existing.role==='ADMIN'&&(body.active===false||body.role==='NV')){
+    if(existing.active&&existing.role==='ADMIN'&&(body.active===false||(body.role&&body.role!=='ADMIN'))){
       const count=await tx.user.count({where:{role:'ADMIN',active:true}});
       if(count<=1)throw Object.assign(new Error('Phải giữ ít nhất một quản trị viên đang hoạt động'),{statusCode:409});
     }
@@ -309,12 +310,32 @@ app.post('/api/admin/houses',async req=>{
     await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house'},update:{status:'PENDING',attempts:0,error:null}});
     await audit(tx,u,'HOUSE_SAVE',code,undefined,v);});return {code};
 });
+app.delete('/api/admin/houses/:code',async req=>{
+  const u=me(req),{code:raw}=input(z.object({code:z.string().trim().min(1)}),req.params),code=key(raw);
+  await db.$transaction(async tx=>{
+    const old=await tx.house.findUniqueOrThrow({where:{code}});
+    await tx.house.update({where:{code},data:{active:false}});
+    await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house'},update:{status:'PENDING',attempts:0,error:null}});
+    await audit(tx,u,'HOUSE_DELETE',code,old,{...old,active:false});
+  });
+  return {ok:true};
+});
 app.get('/api/admin/accounts',async()=>db.bankAccount.findMany({orderBy:{name:'asc'}}));
 app.post('/api/admin/accounts',async req=>{
   const u=me(req),v=input(z.object({name:z.string().trim().min(1).max(100),note:z.string().max(1000).default(''),active:z.boolean().default(true),owner:z.string().max(200).default(''),bank:z.string().max(200).default(''),number:z.string().max(70).default('')}),req.body);
   await db.$transaction(async tx=>{await tx.bankAccount.upsert({where:{name:v.name},create:v,update:{note:v.note,active:v.active,owner:v.owner,bank:v.bank,number:v.number}});
     await tx.catalogOutbox.upsert({where:{key:'account:'+v.name},create:{key:'account:'+v.name,kind:'account'},update:{status:'PENDING',attempts:0,error:null}});
     await audit(tx,u,'ACCOUNT_SAVE',v.name,undefined,{...v,number:v.number.slice(-4)});});return {name:v.name};
+});
+app.delete('/api/admin/accounts/:name',async req=>{
+  const u=me(req),{name}=input(z.object({name:z.string().trim().min(1)}),req.params);
+  await db.$transaction(async tx=>{
+    const old=await tx.bankAccount.findUniqueOrThrow({where:{name}});
+    await tx.bankAccount.update({where:{name},data:{active:false}});
+    await tx.catalogOutbox.upsert({where:{key:'account:'+name},create:{key:'account:'+name,kind:'account'},update:{status:'PENDING',attempts:0,error:null}});
+    await audit(tx,u,'ACCOUNT_DELETE',name,old,{...old,active:false,number:old.number.slice(-4)});
+  });
+  return {ok:true};
 });
 
 app.get('/api/admin/sync',async()=>{
