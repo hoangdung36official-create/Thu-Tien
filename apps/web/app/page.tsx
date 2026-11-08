@@ -53,8 +53,23 @@ function Vincent(){
     if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
   },[]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),4000);return ()=>clearTimeout(t);},[notice]);
-  const meta=useCall<Meta>(['meta',user?.id],'/metadata',!!user);
-  useEffect(()=>{if(!meta.data?.dueLastRead)return;void Promise.all([qc.invalidateQueries({queryKey:['dash']}),qc.invalidateQueries({queryKey:['dues']})]);},[meta.data?.dueLastRead,qc]);
+  const meta=useQuery<Meta>({
+    queryKey:['meta',user?.id],
+    queryFn:()=>api<Meta>('/metadata'),
+    enabled:!!user,
+    staleTime:10000,
+    refetchInterval:30000,
+    refetchOnWindowFocus:true,
+  });
+  useEffect(()=>{
+    if(!meta.data?.dueLastRead)return;
+    void Promise.all([
+      qc.invalidateQueries({queryKey:['dash']}),
+      qc.invalidateQueries({queryKey:['dues']}),
+      qc.invalidateQueries({queryKey:['admin-houses']}),
+      qc.invalidateQueries({queryKey:['admin-sync']}),
+    ]);
+  },[meta.data?.dueLastRead,qc]);
   const dash=useCall<Dashboard>(['dash',user?.id,month],'/dashboard'+parameters({month}),!!user&&!!month&&tab==='dashboard');
   const dues=useCall<{total:number;items:Due[];page:number;summary?:{total:number;roomsPaid:number;roomsIncomplete:number}}>(['dues',user?.id,month,duesPage,filterHouse,search,tab==='collect'],'/dues'+parameters({month,page:duesPage,house:filterHouse,search,summary:tab==='collect'?'true':undefined}),!!user&&!!month&&(tab==='dues'||tab==='collect'));
   const availableMonths=[...new Set([today().slice(0,7),month,...(meta.data?.months||[])])].filter(Boolean).sort().reverse();

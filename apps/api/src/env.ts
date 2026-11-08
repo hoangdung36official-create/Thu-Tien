@@ -21,7 +21,7 @@ const schema = z.object({
   INITIAL_ADMIN_LOGIN: z.string().optional(),
   COLLECTIONS_ENABLED: z.enum(['true', 'false']).default('false'),
   COOKIE_SECURE: z.enum(['true','false']).optional(),
-  SHEET_POLL_SECONDS: z.coerce.number().min(30).default(60),
+  SHEET_POLL_SECONDS: z.coerce.number().min(30).default(30),
   PDF_FONT_PATH: z.string().optional(),
   PDF_FONT_BOLD_PATH: z.string().optional(),
 });
