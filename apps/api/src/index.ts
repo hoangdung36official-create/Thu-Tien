@@ -31,18 +31,17 @@ async function refreshSheetCacheIfStale(){
   await sheetRefresh;
 }
 
-async function explicitlyDeletedHouseCodes(){
-  const tombstones=await db.catalogOutbox.findMany({where:{kind:'house-delete'},select:{key:true}});
-  const codes=tombstones.map(x=>x.key.slice(6)).filter(Boolean);
-  if(!codes.length)return new Set<string>();
+async function explicitHouseStates(){
   const audits=await db.audit.findMany({
-    where:{entityId:{in:codes},action:{in:['HOUSE_SAVE','HOUSE_DELETE']}},
+    where:{action:{in:['HOUSE_SAVE','HOUSE_DELETE']}},
     select:{entityId:true,action:true,createdAt:true},
     orderBy:{createdAt:'desc'},
   });
   const latest=new Map<string,string>();
   for(const row of audits)if(row.entityId&&!latest.has(row.entityId))latest.set(row.entityId,row.action);
-  return new Set([...latest.entries()].filter(([,action])=>action==='HOUSE_DELETE').map(([code])=>code));
+  const saved=new Set<string>(),deleted=new Set<string>();
+  for(const [code,action] of latest)if(action==='HOUSE_SAVE')saved.add(code);else deleted.add(code);
+  return {saved,deleted};
 }
 
 const json=(value:unknown)=>JSON.parse(JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v));
@@ -156,15 +155,20 @@ app.get('/api/auth/me',async req=>({user:me(req),collectionsEnabled:env.COLLECTI
 
 app.get('/api/metadata',async req=>{
   await refreshSheetCacheIfStale();
-  const u=me(req),[catalogHouses,dueHouses,deletedHouseCodes,accounts,months,updated]=await Promise.all([
+  const u=me(req),[catalogHouses,dueHouses,houseStates,accounts,months,updated]=await Promise.all([
     db.house.findMany({where:all(u)?{active:true}:{active:true,code:{in:u.houses}},orderBy:{code:'asc'}}),
     db.due.groupBy({by:['houseCode'],where:all(u)?{}:{houseCode:{in:u.houses}},orderBy:{houseCode:'asc'}}),
-    explicitlyDeletedHouseCodes(),
+    explicitHouseStates(),
     db.bankAccount.findMany({where:all(u)?{active:true}:{active:true,name:{in:u.accounts}},orderBy:{name:'asc'}}),
     db.syncState.findUnique({where:{key:'months'}}),db.syncState.findUnique({where:{key:'dueLastRead'}}),
   ]);
-  const houseMap=new Map(catalogHouses.map(h=>[h.code,h]));
-  for(const h of dueHouses)if(!deletedHouseCodes.has(h.houseCode)&&!houseMap.has(h.houseCode))houseMap.set(h.houseCode,{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  const catalogByCode=new Map(catalogHouses.map(h=>[h.code,h]));
+  const houseMap=new Map<string,(typeof catalogHouses)[number]>();
+  for(const h of dueHouses){
+    if(houseStates.deleted.has(h.houseCode))continue;
+    houseMap.set(h.houseCode,catalogByCode.get(h.houseCode)||{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  }
+  for(const h of catalogHouses)if(houseStates.saved.has(h.code)&&!houseStates.deleted.has(h.code))houseMap.set(h.code,h);
   const houses=[...houseMap.values()].sort((a,b)=>a.code.localeCompare(b.code,'vi'));
   return {houses,accounts,months:months?JSON.parse(months.value):[],dueLastRead:updated?.value||null};
 });
@@ -291,6 +295,14 @@ app.get('/api/reports/transfers',async(req,reply)=>{
   const allowed=q.accountNames?.split(',').map(clean).filter(Boolean);
   if(allowed)for(const name of allowed)permission(scopedAccount(u,name));
   if(q.house)permission(scopedHouse(u,key(q.house)));
+  const optionScope=all(u)?undefined:u.accounts;
+  const [optionCatalog,historicalAccountRows]=await Promise.all([
+    db.bankAccount.findMany({where:{...(optionScope?{name:{in:optionScope}}:{})},orderBy:{name:'asc'}}),
+    db.receipt.findMany({where:{...scopeReceipt(u),method:'Chuyển khoản',accountName:{not:null},...(optionScope?{accountName:{in:optionScope}}:{})},select:{accountName:true},distinct:['accountName'],orderBy:{accountName:'asc'}}),
+  ]);
+  const optionByName=new Map(optionCatalog.map(a=>[a.name,a]));
+  for(const row of historicalAccountRows)if(row.accountName&&!optionByName.has(row.accountName))optionByName.set(row.accountName,{name:row.accountName,owner:'',bank:'',number:'',note:'',active:false,sheetFingerprint:null,updatedAt:new Date(0)});
+  const accountOptions=[...optionByName.values()].sort((a,b)=>a.name.localeCompare(b.name,'vi'));
   const accountScope=allowed || (all(u)?undefined:u.accounts);
   const accounts=await db.bankAccount.findMany({where:{...(accountScope?{name:{in:accountScope}}:{})},orderBy:{name:'asc'}});
   const where:Prisma.ReceiptWhereInput={...scopeReceipt(u),method:'Chuyển khoản',status:q.status,
@@ -310,7 +322,7 @@ app.get('/api/reports/transfers',async(req,reply)=>{
   const filter={month:q.month,from:q.from,to:q.to};
   if(q.format==='pdf'){const file=await makePdf(groups,filter);reply.header('Content-Type','application/pdf').header('Content-Disposition','attachment; filename="vincent-chuyen-khoan.pdf"');return reply.send(file);}
   if(q.format==='zip'){const file=await makeZip(groups,filter);reply.header('Content-Type','application/zip').header('Content-Disposition','attachment; filename="vincent-tai-khoan.zip"');return reply.send(file);}
-  return {groups:groups.map(g=>({account:g.account,count:g.receipts.length,total:safeNumber(g.total),receipts:g.receipts.map(publicReceipt)})),total:safeNumber(sum(groups.map(g=>g.total)))};
+  return {groups:groups.map(g=>({account:g.account,count:g.receipts.length,total:safeNumber(g.total),receipts:g.receipts.map(publicReceipt)})),total:safeNumber(sum(groups.map(g=>g.total))),accountOptions};
 });
 
 app.get('/api/admin/users',async()=>{
@@ -321,9 +333,23 @@ const userData=z.object({login:z.string().regex(/^\+?\d{9,15}$/),name:z.string()
 app.post('/api/admin/users',async req=>{
   const u=me(req),body=input(userData.extend({password:z.string().min(10)}),req.body);
   const hashed=await argon2.hash(body.password,{type:argon2.argon2id});
-  const created=await db.user.create({data:{login:body.login,name:body.name,role:body.role,active:body.active,passwordHash:hashed,
-    houses:{create:body.houses.map(houseCode=>({houseCode:key(houseCode)}))},accounts:{create:body.accounts.map(accountName=>({accountName}))}}});
-  await db.audit.create({data:{actorId:u.id,actorLogin:u.login,action:'USER_CREATE',entityId:created.id,after:{login:created.login,role:created.role}}});
+  const created=await db.$transaction(async tx=>{
+    const existing=await tx.user.findUnique({where:{login:body.login}});
+    if(existing?.active)throw Object.assign(new Error('Số điện thoại này đã có tài khoản đang hoạt động'),{statusCode:409});
+    let target:User;
+    if(existing){
+      await tx.session.deleteMany({where:{userId:existing.id}});
+      await tx.userHouse.deleteMany({where:{userId:existing.id}});
+      await tx.userAccount.deleteMany({where:{userId:existing.id}});
+      target=await tx.user.update({where:{id:existing.id},data:{name:body.name,role:body.role,active:true,passwordHash:hashed,legacySalt:null,legacyHash:null,sessionVersion:{increment:1}}});
+    }else{
+      target=await tx.user.create({data:{login:body.login,name:body.name,role:body.role,active:true,passwordHash:hashed}});
+    }
+    if(body.houses.length)await tx.userHouse.createMany({data:body.houses.map(houseCode=>({userId:target.id,houseCode:key(houseCode)})),skipDuplicates:true});
+    if(body.accounts.length)await tx.userAccount.createMany({data:body.accounts.map(accountName=>({userId:target.id,accountName})),skipDuplicates:true});
+    await audit(tx,u,existing?'USER_RESTORE':'USER_CREATE',target.id,existing?{login:existing.login,name:existing.name,role:existing.role,active:existing.active}:undefined,{login:target.login,name:target.name,role:target.role});
+    return target;
+  },{isolationLevel:'Serializable'});
   return {id:created.id};
 });
 app.patch('/api/admin/users/:id',async req=>{
@@ -364,13 +390,18 @@ app.delete('/api/admin/users/:id',async req=>{
 });
 
 app.get('/api/admin/houses',async()=>{
-  const [catalogHouses,dueHouses,deletedHouseCodes]=await Promise.all([
+  const [catalogHouses,dueHouses,houseStates]=await Promise.all([
     db.house.findMany({where:{active:true},orderBy:{code:'asc'}}),
     db.due.groupBy({by:['houseCode'],orderBy:{houseCode:'asc'}}),
-    explicitlyDeletedHouseCodes(),
+    explicitHouseStates(),
   ]);
-  const houseMap=new Map(catalogHouses.map(h=>[h.code,h]));
-  for(const h of dueHouses)if(!deletedHouseCodes.has(h.houseCode)&&!houseMap.has(h.houseCode))houseMap.set(h.houseCode,{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  const catalogByCode=new Map(catalogHouses.map(h=>[h.code,h]));
+  const houseMap=new Map<string,(typeof catalogHouses)[number]>();
+  for(const h of dueHouses){
+    if(houseStates.deleted.has(h.houseCode))continue;
+    houseMap.set(h.houseCode,catalogByCode.get(h.houseCode)||{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  }
+  for(const h of catalogHouses)if(houseStates.saved.has(h.code)&&!houseStates.deleted.has(h.code))houseMap.set(h.code,h);
   return [...houseMap.values()].sort((a,b)=>a.code.localeCompare(b.code,'vi'));
 });
 app.post('/api/admin/houses',async req=>{
