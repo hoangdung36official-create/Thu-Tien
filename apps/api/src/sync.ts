@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { acquireLease, db, keyScope, releaseLease, renewLease } from './db.js';
 import { env } from './env.js';
 import { catalogHasConflict, pendingRemoteHasConflict, journalValues, readJournal } from './business.js';
@@ -5,6 +6,11 @@ import { appendJournal, clearCatalog, deleteJournalRow, readJournalLive, readSna
 import type { Receipt } from '@prisma/client';
 
 const LOCK=keyScope+'sync-lock';
+function sheetSnapshotFingerprint(snapshot:SheetSnapshot){
+  return createHash('sha256')
+    .update(JSON.stringify(snapshot,(_,value)=>typeof value==='bigint'?value.toString():value))
+    .digest('hex');
+}
 function spreadsheetId(){
   if(!env.GOOGLE_SPREADSHEET_ID) throw new Error('Google Sheets chưa được cấu hình');
   return env.GOOGLE_SPREADSHEET_ID;
@@ -47,13 +53,19 @@ export async function assertBinding() {
 
 export async function pullSnapshot(s:SheetSnapshot) {
   await assertBinding();
+  const snapshotFingerprint=sheetSnapshotFingerprint(s);
+  const previousFingerprint=await db.syncState.findUnique({where:{key:'sheetSnapshotFingerprint'}});
+  if(previousFingerprint?.value===snapshotFingerprint){
+    const now=new Date().toISOString();
+    await db.syncState.upsert({where:{key:'dueLastRead'},create:{key:'dueLastRead',value:now},update:{value:now}});
+    return false;
+  }
   // NHẬP CẦN THU is authoritative. Replace only the imported dues atomically.
   await db.$transaction(async tx=>{
     await tx.due.deleteMany();
     for(let i=0;i<s.dues.length;i+=500) await tx.due.createMany({data:s.dues.slice(i,i+500)});
     await tx.syncState.upsert({where:{key:'sheetTitle'},create:{key:'sheetTitle',value:s.title},update:{value:s.title}});
     await tx.syncState.upsert({where:{key:'months'},create:{key:'months',value:JSON.stringify(s.months)},update:{value:JSON.stringify(s.months)}});
-    await tx.syncState.upsert({where:{key:'dueLastRead'},create:{key:'dueLastRead',value:new Date().toISOString()},update:{value:new Date().toISOString()}});
   },{timeout:120000});
   for(const h of s.houses) {
     const local=await db.house.findUnique({where:{code:h.code}});
@@ -150,7 +162,13 @@ export async function pullSnapshot(s:SheetSnapshot) {
     if(ids.has(local.id)) continue;
     await conflict('receipt',local.id,'Mã giao dịch đã biến mất khỏi NHẬT KÝ; cần đối soát',receiptPayload(local),null);
   }
-  await db.syncState.upsert({where:{key:'lastPull'},create:{key:'lastPull',value:new Date().toISOString()},update:{value:new Date().toISOString()}});
+  const now=new Date().toISOString();
+  await db.$transaction([
+    db.syncState.upsert({where:{key:'lastPull'},create:{key:'lastPull',value:now},update:{value:now}}),
+    db.syncState.upsert({where:{key:'dueLastRead'},create:{key:'dueLastRead',value:now},update:{value:now}}),
+    db.syncState.upsert({where:{key:'sheetSnapshotFingerprint'},create:{key:'sheetSnapshotFingerprint',value:snapshotFingerprint},update:{value:snapshotFingerprint}}),
+  ]);
+  return true;
 }
 
 export async function flushOutbox(assertLease:()=>void=()=>{}){
