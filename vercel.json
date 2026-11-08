@@ -30,7 +30,7 @@
     "worker": {
       "root": ".",
       "entrypoint": "Dockerfile.vercel-api",
-      "command": ["sh", "-c", "npm run db:migrate -w @vincent/api && exec npm run start:worker -w @vincent/api"],
+      "command": ["npm", "run", "start:worker", "-w", "@vincent/api"],
       "instances": { "sin1": 1 }
     }
   }

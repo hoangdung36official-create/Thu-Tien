@@ -1,7 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from './env.js';
 
-export const db = new PrismaClient();
+export const db = new PrismaClient({
+  datasourceUrl: env.DATABASE_URL_POOLED || env.DATABASE_URL,
+});
 export const keyScope = `vincent:${env.GOOGLE_SPREADSHEET_ID || 'unconfigured'}:`;
 
 export async function acquireLease(key:string,token:string,ttlMs:number){
