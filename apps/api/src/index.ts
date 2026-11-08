@@ -9,13 +9,27 @@ import { acquireLease, db, keyScope, releaseLease } from './db.js';
 import { cookieSecure, env } from './env.js';
 import { balance, checkAmount, clean, key, monthValid, newReceiptId, parseDate, safeNumber, sum, vnd, dayText } from './business.js';
 import { makePdf, makeZip, type ReportGroup } from './reports.js';
-import { assertBinding, runSyncCycle } from './sync.js';
+import { assertBinding, pullSnapshot, runSyncCycle } from './sync.js';
 import { verifySpreadsheet, readSnapshot } from './sheets.js';
 
 type Identity={id:string;login:string;name:string;role:string;houses:string[];accounts:string[]};
 const app=Fastify({logger:{redact:['req.headers.cookie','req.headers.authorization']},bodyLimit:100000});
 await app.register(cookie);
 await app.register(helmet,{contentSecurityPolicy:false});
+
+let sheetRefresh:Promise<void>|null=null;
+async function refreshSheetCacheIfStale(){
+  const state=await db.syncState.findUnique({where:{key:'dueLastRead'}});
+  const last=state?.value?Date.parse(state.value):0;
+  if(Number.isFinite(last)&&Date.now()-last<env.SHEET_POLL_SECONDS*1000)return;
+  if(!sheetRefresh)sheetRefresh=(async()=>{
+    const snapshot=await readSnapshot();
+    await pullSnapshot(snapshot);
+  })().catch(e=>{
+    app.log.warn({err:e},'Không thể làm mới dữ liệu Google Sheets, dùng dữ liệu cache hiện có');
+  }).finally(()=>{sheetRefresh=null;});
+  await sheetRefresh;
+}
 
 const json=(value:unknown)=>JSON.parse(JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v));
 const tokenHash=(token:string)=>createHash('sha256').update(env.SESSION_SECRET+':'+token).digest('hex');
@@ -127,11 +141,18 @@ app.post('/api/auth/logout',async(req,reply)=>{
 app.get('/api/auth/me',async req=>({user:me(req),collectionsEnabled:env.COLLECTIONS_ENABLED==='true'}));
 
 app.get('/api/metadata',async req=>{
-  const u=me(req),[houses,accounts,months,updated]=await Promise.all([
+  await refreshSheetCacheIfStale();
+  const u=me(req),[catalogHouses,dueHouses,deletedHouses,accounts,months,updated]=await Promise.all([
     db.house.findMany({where:all(u)?{active:true}:{active:true,code:{in:u.houses}},orderBy:{code:'asc'}}),
+    db.due.groupBy({by:['houseCode'],where:all(u)?{}:{houseCode:{in:u.houses}},orderBy:{houseCode:'asc'}}),
+    db.catalogOutbox.findMany({where:{kind:'house-delete'},select:{key:true}}),
     db.bankAccount.findMany({where:all(u)?{active:true}:{active:true,name:{in:u.accounts}},orderBy:{name:'asc'}}),
     db.syncState.findUnique({where:{key:'months'}}),db.syncState.findUnique({where:{key:'dueLastRead'}}),
   ]);
+  const houseMap=new Map(catalogHouses.map(h=>[h.code,h]));
+  const deletedHouseCodes=new Set(deletedHouses.map(h=>h.key.slice(6)));
+  for(const h of dueHouses)if(!deletedHouseCodes.has(h.houseCode)&&!houseMap.has(h.houseCode))houseMap.set(h.houseCode,{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  const houses=[...houseMap.values()].sort((a,b)=>a.code.localeCompare(b.code,'vi'));
   return {houses,accounts,months:months?JSON.parse(months.value):[],dueLastRead:updated?.value||null};
 });
 
@@ -280,7 +301,7 @@ app.get('/api/reports/transfers',async(req,reply)=>{
 });
 
 app.get('/api/admin/users',async()=>{
-  const users=await db.user.findMany({include:{houses:true,accounts:true},orderBy:{name:'asc'}});
+  const users=await db.user.findMany({where:{active:true},include:{houses:true,accounts:true},orderBy:{name:'asc'}});
   return users.map(u=>({...ident(u),active:u.active,hasPassword:!!u.passwordHash}));
 });
 const userData=z.object({login:z.string().regex(/^\+?\d{9,15}$/),name:z.string().trim().min(2).max(100),password:z.string().min(10).optional(),role:z.enum(['ADMIN','NV','KETOAN']).default('NV'),active:z.boolean().default(true),houses:z.array(z.string()).default([]),accounts:z.array(z.string()).default([])});
@@ -307,6 +328,24 @@ app.patch('/api/admin/users/:id',async req=>{
       sessionVersion:{increment:1},...(body.houses?{houses:{deleteMany:{},create:body.houses.map(houseCode=>({houseCode:key(houseCode)}))}}:{}),
       ...(body.accounts?{accounts:{deleteMany:{},create:body.accounts.map(accountName=>({accountName}))}}:{})}});
     await audit(tx,u,'USER_UPDATE',id,undefined,{...body,password:undefined});
+  },{isolationLevel:'Serializable'});
+  return {ok:true};
+});
+
+app.delete('/api/admin/users/:id',async req=>{
+  const u=me(req),{id}=input(z.object({id:z.string()}),req.params);
+  if(id===u.id)throw Object.assign(new Error('Không thể xóa tài khoản đang đăng nhập'),{statusCode:409});
+  await db.$transaction(async tx=>{
+    const existing=await tx.user.findUniqueOrThrow({where:{id}});
+    if(existing.role==='ADMIN'&&existing.active){
+      const count=await tx.user.count({where:{role:'ADMIN',active:true}});
+      if(count<=1)throw Object.assign(new Error('Phải giữ ít nhất một quản trị viên đang hoạt động'),{statusCode:409});
+    }
+    await tx.session.deleteMany({where:{userId:id}});
+    await tx.userHouse.deleteMany({where:{userId:id}});
+    await tx.userAccount.deleteMany({where:{userId:id}});
+    await tx.user.update({where:{id},data:{active:false,sessionVersion:{increment:1}}});
+    await audit(tx,u,'USER_DELETE',id,{login:existing.login,name:existing.name,role:existing.role},undefined);
   },{isolationLevel:'Serializable'});
   return {ok:true};
 });
