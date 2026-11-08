@@ -87,6 +87,18 @@ export async function writeCatalog(kind:'house'|'account',row:number,value:{code
   }
 }
 
+export async function clearCatalog(kind:'house'|'account',row:number):Promise<void>{
+  const {api,id}=sheetsClient();
+  if(kind==='house'){
+    await api.spreadsheets.values.batchClear({spreadsheetId:id,requestBody:{ranges:[
+      sheetRef('CÀI ĐẶT',`A${row}`),
+      sheetRef('CÀI ĐẶT',`K${row}:M${row}`),
+    ]}});
+  }else{
+    await api.spreadsheets.values.clear({spreadsheetId:id,range:sheetRef('TÀI KHOẢN NHẬN',`A${row}:C${row}`)});
+  }
+}
+
 export async function readJournalLive():Promise<unknown[][]>{
   const {api,id}=sheetsClient();
   const res=await api.spreadsheets.values.get({spreadsheetId:id,range:sheetRef('NHẬT KÝ','A:M'),valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});

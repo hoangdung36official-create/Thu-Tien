@@ -128,8 +128,8 @@ app.get('/api/auth/me',async req=>({user:me(req),collectionsEnabled:env.COLLECTI
 
 app.get('/api/metadata',async req=>{
   const u=me(req),[houses,accounts,months,updated]=await Promise.all([
-    db.house.findMany({where:all(u)?{}:{code:{in:u.houses}},orderBy:{code:'asc'}}),
-    db.bankAccount.findMany({where:all(u)?{}:{name:{in:u.accounts}},orderBy:{name:'asc'}}),
+    db.house.findMany({where:all(u)?{active:true}:{active:true,code:{in:u.houses}},orderBy:{code:'asc'}}),
+    db.bankAccount.findMany({where:all(u)?{active:true}:{active:true,name:{in:u.accounts}},orderBy:{name:'asc'}}),
     db.syncState.findUnique({where:{key:'months'}}),db.syncState.findUnique({where:{key:'dueLastRead'}}),
   ]);
   return {houses,accounts,months:months?JSON.parse(months.value):[],dueLastRead:updated?.value||null};
@@ -311,38 +311,40 @@ app.patch('/api/admin/users/:id',async req=>{
   return {ok:true};
 });
 
-app.get('/api/admin/houses',async()=>db.house.findMany({orderBy:{code:'asc'}}));
+app.get('/api/admin/houses',async()=>db.house.findMany({where:{active:true},orderBy:{code:'asc'}}));
 app.post('/api/admin/houses',async req=>{
-  const u=me(req),v=input(z.object({code:z.string().trim().min(1).max(30),name:z.string().max(200).default(''),note:z.string().max(1000).default(''),active:z.boolean().default(true)}),req.body);
+  const u=me(req),v=input(z.object({code:z.string().trim().min(1).max(30),name:z.string().max(200).default(''),note:z.string().max(1000).default('')}),req.body);
   const code=key(v.code);
-  await db.$transaction(async tx=>{await tx.house.upsert({where:{code},create:{code,name:v.name,note:v.note,active:v.active},update:{name:v.name,note:v.note,active:v.active}});
-    await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house'},update:{status:'PENDING',attempts:0,error:null}});
+  await db.$transaction(async tx=>{await tx.house.upsert({where:{code},create:{code,name:v.name,note:v.note,active:true},update:{name:v.name,note:v.note,active:true}});
+    await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house'},update:{kind:'house',status:'PENDING',attempts:0,error:null}});
     await audit(tx,u,'HOUSE_SAVE',code,undefined,v);});return {code};
 });
 app.delete('/api/admin/houses/:code',async req=>{
   const u=me(req),{code:raw}=input(z.object({code:z.string().trim().min(1)}),req.params),code=key(raw);
   await db.$transaction(async tx=>{
     const old=await tx.house.findUniqueOrThrow({where:{code}});
-    await tx.house.update({where:{code},data:{active:false}});
-    await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house'},update:{status:'PENDING',attempts:0,error:null}});
-    await audit(tx,u,'HOUSE_DELETE',code,old,{...old,active:false});
+    await tx.userHouse.deleteMany({where:{houseCode:code}});
+    await tx.house.delete({where:{code}});
+    await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house-delete'},update:{kind:'house-delete',status:'PENDING',attempts:0,error:null}});
+    await audit(tx,u,'HOUSE_DELETE',code,old,undefined);
   });
   return {ok:true};
 });
-app.get('/api/admin/accounts',async()=>db.bankAccount.findMany({orderBy:{name:'asc'}}));
+app.get('/api/admin/accounts',async()=>db.bankAccount.findMany({where:{active:true},orderBy:{name:'asc'}}));
 app.post('/api/admin/accounts',async req=>{
-  const u=me(req),v=input(z.object({name:z.string().trim().min(1).max(100),note:z.string().max(1000).default(''),active:z.boolean().default(true),owner:z.string().max(200).default(''),bank:z.string().max(200).default(''),number:z.string().max(70).default('')}),req.body);
-  await db.$transaction(async tx=>{await tx.bankAccount.upsert({where:{name:v.name},create:v,update:{note:v.note,active:v.active,owner:v.owner,bank:v.bank,number:v.number}});
-    await tx.catalogOutbox.upsert({where:{key:'account:'+v.name},create:{key:'account:'+v.name,kind:'account'},update:{status:'PENDING',attempts:0,error:null}});
-    await audit(tx,u,'ACCOUNT_SAVE',v.name,undefined,{...v,number:v.number.slice(-4)});});return {name:v.name};
+  const u=me(req),v=input(z.object({name:z.string().trim().min(1).max(100),bank:z.string().trim().min(1).max(200)}),req.body);
+  await db.$transaction(async tx=>{await tx.bankAccount.upsert({where:{name:v.name},create:{name:v.name,bank:v.bank,owner:'',number:'',note:'',active:true},update:{bank:v.bank,owner:'',number:'',note:'',active:true}});
+    await tx.catalogOutbox.upsert({where:{key:'account:'+v.name},create:{key:'account:'+v.name,kind:'account'},update:{kind:'account',status:'PENDING',attempts:0,error:null}});
+    await audit(tx,u,'ACCOUNT_SAVE',v.name,undefined,v);});return {name:v.name};
 });
 app.delete('/api/admin/accounts/:name',async req=>{
   const u=me(req),{name}=input(z.object({name:z.string().trim().min(1)}),req.params);
   await db.$transaction(async tx=>{
     const old=await tx.bankAccount.findUniqueOrThrow({where:{name}});
-    await tx.bankAccount.update({where:{name},data:{active:false}});
-    await tx.catalogOutbox.upsert({where:{key:'account:'+name},create:{key:'account:'+name,kind:'account'},update:{status:'PENDING',attempts:0,error:null}});
-    await audit(tx,u,'ACCOUNT_DELETE',name,old,{...old,active:false,number:old.number.slice(-4)});
+    await tx.userAccount.deleteMany({where:{accountName:name}});
+    await tx.bankAccount.delete({where:{name}});
+    await tx.catalogOutbox.upsert({where:{key:'account:'+name},create:{key:'account:'+name,kind:'account-delete'},update:{kind:'account-delete',status:'PENDING',attempts:0,error:null}});
+    await audit(tx,u,'ACCOUNT_DELETE',name,{...old,number:old.number.slice(-4)},undefined);
   });
   return {ok:true};
 });

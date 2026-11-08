@@ -1,7 +1,7 @@
 import { acquireLease, db, keyScope, releaseLease, renewLease } from './db.js';
 import { env } from './env.js';
 import { catalogHasConflict, pendingRemoteHasConflict, journalValues, readJournal } from './business.js';
-import { appendJournal, deleteJournalRow, readJournalLive, readSnapshot, replaceJournalRow, writeCatalog, type SheetSnapshot } from './sheets.js';
+import { appendJournal, clearCatalog, deleteJournalRow, readJournalLive, readSnapshot, replaceJournalRow, writeCatalog, type SheetSnapshot } from './sheets.js';
 import type { Receipt } from '@prisma/client';
 
 const LOCK=keyScope+'sync-lock';
@@ -59,9 +59,18 @@ export async function pullSnapshot(s:SheetSnapshot) {
     const local=await db.house.findUnique({where:{code:h.code}});
     const pending=await db.catalogOutbox.findUnique({where:{key:'house:'+h.code}});
     if(pending && pending.status!=='SYNCED') {
+      if(pending.kind==='house-delete') continue;
       const equal=!!local&&local.name===h.name&&local.note===h.note&&local.active===h.active;
       if(catalogHasConflict(h.fingerprint,local?.sheetFingerprint||null,equal))
         await conflict('house',h.code,'Danh mục nhà thay đổi ở cả hai phía',local,h);
+      continue;
+    }
+    if(!h.active){
+      await db.$transaction(async tx=>{
+        await tx.userHouse.deleteMany({where:{houseCode:h.code}});
+        await tx.house.deleteMany({where:{code:h.code}});
+        await tx.catalogOutbox.upsert({where:{key:'house:'+h.code},create:{key:'house:'+h.code,kind:'house-delete'},update:{kind:'house-delete',status:'PENDING',attempts:0,error:null}});
+      });
       continue;
     }
     await db.house.upsert({where:{code:h.code},create:{code:h.code,name:h.name,note:h.note,active:h.active,sheetFingerprint:h.fingerprint},update:{name:h.name,note:h.note,active:h.active,sheetFingerprint:h.fingerprint}});
@@ -70,9 +79,18 @@ export async function pullSnapshot(s:SheetSnapshot) {
     const local=await db.bankAccount.findUnique({where:{name:a.name}});
     const pending=await db.catalogOutbox.findUnique({where:{key:'account:'+a.name}});
     if(pending && pending.status!=='SYNCED') {
+      if(pending.kind==='account-delete') continue;
       const equal=!!local&&local.note===a.note&&local.active===a.active;
       if(catalogHasConflict(a.fingerprint,local?.sheetFingerprint||null,equal))
         await conflict('account',a.name,'Tài khoản nhận thay đổi ở hai phía',local,a);
+      continue;
+    }
+    if(!a.active){
+      await db.$transaction(async tx=>{
+        await tx.userAccount.deleteMany({where:{accountName:a.name}});
+        await tx.bankAccount.deleteMany({where:{name:a.name}});
+        await tx.catalogOutbox.upsert({where:{key:'account:'+a.name},create:{key:'account:'+a.name,kind:'account-delete'},update:{kind:'account-delete',status:'PENDING',attempts:0,error:null}});
+      });
       continue;
     }
     await db.bankAccount.upsert({where:{name:a.name},create:{name:a.name,note:a.note,active:a.active,sheetFingerprint:a.fingerprint},update:{note:a.note,active:a.active,sheetFingerprint:a.fingerprint}});
@@ -231,7 +249,19 @@ export async function flushCatalog(assertLease:()=>void=()=>{}){
     try{
       // Refresh after every write: two new records may otherwise target the same row.
       const s=await readSnapshot();
-      if(job.kind==='house'){
+      if(job.kind==='house-delete'){
+        const code=job.key.slice(6),row=s.houses.find(h=>h.code===code);
+        if(row){assertLease();await clearCatalog('house',row.row);}
+        const actual=(await readSnapshot()).houses.find(h=>h.code===code);
+        if(actual) throw new Error('Không xóa được tòa nhà khỏi Google Sheets');
+        await db.catalogOutbox.updateMany({where:{key:job.key,updatedAt:job.updatedAt,status:{in:['PENDING','FAILED']}},data:{status:'SYNCED',error:null}});
+      }else if(job.kind==='account-delete'){
+        const name=job.key.slice(8),row=s.accounts.find(a=>a.name===name);
+        if(row){assertLease();await clearCatalog('account',row.row);}
+        const actual=(await readSnapshot()).accounts.find(a=>a.name===name);
+        if(actual) throw new Error('Không xóa được tài khoản nhận khỏi Google Sheets');
+        await db.catalogOutbox.updateMany({where:{key:job.key,updatedAt:job.updatedAt,status:{in:['PENDING','FAILED']}},data:{status:'SYNCED',error:null}});
+      }else if(job.kind==='house'){
         const code=job.key.slice(6),item=await db.house.findUniqueOrThrow({where:{code}}),row=s.houses.find(h=>h.code===code);
         const equal=!!row&&row.name===item.name&&row.note===item.note&&row.active===item.active;
         if(catalogHasConflict(row?.fingerprint||null,item.sheetFingerprint,equal))
@@ -248,7 +278,7 @@ export async function flushCatalog(assertLease:()=>void=()=>{}){
             await tx.catalogOutbox.updateMany({where:{key:job.key,updatedAt:job.updatedAt,status:{in:['PENDING','FAILED']}},
               data:{status:'SYNCED',error:null}});
         });
-      }else{
+      }else if(job.kind==='account'){
         const name=job.key.slice(8),item=await db.bankAccount.findUniqueOrThrow({where:{name}}),row=s.accounts.find(a=>a.name===name);
         const equal=!!row&&row.note===item.note&&row.active===item.active;
         if(catalogHasConflict(row?.fingerprint||null,item.sheetFingerprint,equal))
@@ -265,7 +295,7 @@ export async function flushCatalog(assertLease:()=>void=()=>{}){
             await tx.catalogOutbox.updateMany({where:{key:job.key,updatedAt:job.updatedAt,status:{in:['PENDING','FAILED']}},
               data:{status:'SYNCED',error:null}});
         });
-      }
+      }else throw new Error('Loại đồng bộ danh mục không hợp lệ');
     }catch(e){
       const message=String(e);
       if(message.includes('Xung đột')) await conflict(job.kind,job.key.split(':').slice(1).join(':'),message,null,null);
