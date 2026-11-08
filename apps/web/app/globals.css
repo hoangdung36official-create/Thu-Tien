@@ -9,3 +9,45 @@
 
 @media(max-width:900px){.collection-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.collection-grid{grid-template-columns:1fr}.report-intro{display:grid;gap:14px}.report-kpi{min-width:0;text-align:left}.report-panel{padding:17px 14px}.report-group{padding:0 10px 8px}.collect-surface .section-title{display:grid}}
+
+.collection-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 17px}
+.collection-stat{display:grid;gap:5px;padding:13px 15px;background:#f6f9fb;border:1px solid #e0e9ef;border-radius:11px;min-width:0}
+.collection-stat span{color:#6b8090;font-size:11px;font-weight:650}
+.collection-stat strong{font-size:23px;line-height:1;color:var(--navy)}
+.collection-stat.success{background:#f2f9f5;border-color:#dceee3}
+.collection-stat.success strong{color:#317b60}
+.collection-stat.outstanding{background:#fff9f1;border-color:#f1e6d6}
+.collection-stat.outstanding strong{color:#9e671e}
+.collection-card{gap:12px;min-width:0}
+.collection-room{min-width:0}
+.collection-status{display:inline-flex;align-items:center;width:fit-content;padding:4px 7px;border-radius:6px;font-size:10px;font-weight:700}
+.collection-status.complete{color:#287451;background:#eaf6ee}
+.collection-status.partial{color:#9b6c22;background:#fff4df}
+.collection-status.unpaid{color:#6b7e8d;background:#edf2f5}
+.collection-money{gap:8px}
+.collection-line{display:flex;align-items:baseline;justify-content:space-between;gap:7px;min-width:0}
+.collection-line span{font-size:11px;color:#7d909d}
+.collection-line b{font-size:12px;color:#29475b;overflow-wrap:anywhere;text-align:right}
+.collection-remaining{display:grid;gap:3px;padding-top:8px;border-top:1px dashed #dfe8ed}
+.collection-remaining small{font-size:11px;color:#697f8d}
+.collection-remaining strong{font-size:19px;line-height:1.2;overflow-wrap:anywhere}
+.collection-done{display:flex;align-items:center;justify-content:center;gap:6px;min-height:39px;font-size:11px;font-weight:700;color:#44856c}
+
+@media(max-width:650px){
+  .collect-surface{padding:16px 12px}
+  .collect-surface .section-title{gap:5px}
+  .collection-stats{gap:6px;margin-bottom:14px}
+  .collection-stat{padding:10px 7px;border-radius:9px}
+  .collection-stat span{font-size:10px;line-height:1.25}
+  .collection-stat strong{font-size:20px}
+  .collection-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .collection-card{padding:12px 10px;border-radius:11px;gap:10px}
+  .collection-card>div:first-child strong{font-size:15px}
+  .collection-house{font-size:10px}
+  .collection-money{padding-top:9px;gap:7px}
+  .collection-line{display:grid;gap:2px}
+  .collection-line b{font-size:12px;text-align:left}
+  .collection-remaining strong{font-size:15px;letter-spacing:-.03em}
+  .collect-btn{padding:9px 4px;min-height:37px;font-size:11px;gap:5px}
+  .collect-btn svg{width:15px;height:15px}
+}

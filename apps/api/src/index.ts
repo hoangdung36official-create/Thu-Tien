@@ -136,14 +136,23 @@ app.get('/api/metadata',async req=>{
 });
 
 app.get('/api/dues',async req=>{
-  const u=me(req),q=input(z.object({month:z.string(),house:z.string().optional(),search:z.string().optional(),page:z.coerce.number().int().min(1).default(1)}),req.query);
+  const u=me(req),q=input(z.object({month:z.string(),house:z.string().optional(),search:z.string().optional(),page:z.coerce.number().int().min(1).default(1),summary:z.enum(['true']).optional()}),req.query);
   if(!monthValid(q.month))throw new Error('Tháng không hợp lệ');
   const houses=all(u)?(q.house?[key(q.house)]:undefined):q.house?(permission(scopedHouse(u,key(q.house))),[key(q.house)]):u.houses;
   const where:Prisma.DueWhereInput={month:q.month,...(houses?{houseCode:{in:houses}}:{}),...(q.search?{OR:[{room:{contains:q.search,mode:'insensitive'}},{houseCode:{contains:q.search,mode:'insensitive'}}]}:{})};
-  const [total,dues]=await Promise.all([db.due.count({where}),db.due.findMany({where,orderBy:[{houseCode:'asc'},{room:'asc'}],skip:(q.page-1)*100,take:100})]);
-  const paid=await db.receipt.groupBy({by:['houseCode','room'],where:{month:q.month,status:'ACTIVE',houseCode:{in:[...new Set(dues.map(d=>d.houseCode))]}},_sum:{amount:true}});
+  const [total,dues,summaryDues]=await Promise.all([
+    db.due.count({where}),
+    db.due.findMany({where,orderBy:[{houseCode:'asc'},{room:'asc'}],skip:(q.page-1)*100,take:100}),
+    q.summary?db.due.findMany({where,select:{houseCode:true,room:true,amount:true}}):Promise.resolve(null),
+  ]);
+  const relevantDues=summaryDues||dues;
+  const paid=await db.receipt.groupBy({by:['houseCode','room'],where:{month:q.month,status:'ACTIVE',houseCode:{in:[...new Set(relevantDues.map(d=>d.houseCode))]}},_sum:{amount:true}});
   const paidMap=new Map(paid.map(p=>[p.houseCode+'|'+p.room,p._sum.amount||0n]));
-  return {total,page:q.page,items:dues.map(d=>({month:d.month,houseCode:d.houseCode,room:d.room,due:safeNumber(d.amount),paid:safeNumber(paidMap.get(d.houseCode+'|'+d.room)||0n),remaining:safeNumber(balance(d.amount,paidMap.get(d.houseCode+'|'+d.room)||0n))}))};
+  const roomsPaid=summaryDues?.filter(d=>(paidMap.get(d.houseCode+'|'+d.room)||0n)>=d.amount).length;
+  return {total,page:q.page,
+    items:dues.map(d=>({month:d.month,houseCode:d.houseCode,room:d.room,due:safeNumber(d.amount),paid:safeNumber(paidMap.get(d.houseCode+'|'+d.room)||0n),remaining:safeNumber(balance(d.amount,paidMap.get(d.houseCode+'|'+d.room)||0n))})),
+    ...(roomsPaid===undefined?{}:{summary:{total,roomsPaid,roomsIncomplete:total-roomsPaid}}),
+  };
 });
 
 app.get('/api/dashboard',async req=>{
