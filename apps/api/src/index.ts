@@ -31,6 +31,20 @@ async function refreshSheetCacheIfStale(){
   await sheetRefresh;
 }
 
+async function explicitlyDeletedHouseCodes(){
+  const tombstones=await db.catalogOutbox.findMany({where:{kind:'house-delete'},select:{key:true}});
+  const codes=tombstones.map(x=>x.key.slice(6)).filter(Boolean);
+  if(!codes.length)return new Set<string>();
+  const audits=await db.audit.findMany({
+    where:{entityId:{in:codes},action:{in:['HOUSE_SAVE','HOUSE_DELETE']}},
+    select:{entityId:true,action:true,createdAt:true},
+    orderBy:{createdAt:'desc'},
+  });
+  const latest=new Map<string,string>();
+  for(const row of audits)if(row.entityId&&!latest.has(row.entityId))latest.set(row.entityId,row.action);
+  return new Set([...latest.entries()].filter(([,action])=>action==='HOUSE_DELETE').map(([code])=>code));
+}
+
 const json=(value:unknown)=>JSON.parse(JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v));
 const tokenHash=(token:string)=>createHash('sha256').update(env.SESSION_SECRET+':'+token).digest('hex');
 const currentDate=()=>{
@@ -142,15 +156,14 @@ app.get('/api/auth/me',async req=>({user:me(req),collectionsEnabled:env.COLLECTI
 
 app.get('/api/metadata',async req=>{
   await refreshSheetCacheIfStale();
-  const u=me(req),[catalogHouses,dueHouses,deletedHouses,accounts,months,updated]=await Promise.all([
+  const u=me(req),[catalogHouses,dueHouses,deletedHouseCodes,accounts,months,updated]=await Promise.all([
     db.house.findMany({where:all(u)?{active:true}:{active:true,code:{in:u.houses}},orderBy:{code:'asc'}}),
     db.due.groupBy({by:['houseCode'],where:all(u)?{}:{houseCode:{in:u.houses}},orderBy:{houseCode:'asc'}}),
-    db.catalogOutbox.findMany({where:{kind:'house-delete'},select:{key:true}}),
+    explicitlyDeletedHouseCodes(),
     db.bankAccount.findMany({where:all(u)?{active:true}:{active:true,name:{in:u.accounts}},orderBy:{name:'asc'}}),
     db.syncState.findUnique({where:{key:'months'}}),db.syncState.findUnique({where:{key:'dueLastRead'}}),
   ]);
   const houseMap=new Map(catalogHouses.map(h=>[h.code,h]));
-  const deletedHouseCodes=new Set(deletedHouses.map(h=>h.key.slice(6)));
   for(const h of dueHouses)if(!deletedHouseCodes.has(h.houseCode)&&!houseMap.has(h.houseCode))houseMap.set(h.houseCode,{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
   const houses=[...houseMap.values()].sort((a,b)=>a.code.localeCompare(b.code,'vi'));
   return {houses,accounts,months:months?JSON.parse(months.value):[],dueLastRead:updated?.value||null};
@@ -350,7 +363,16 @@ app.delete('/api/admin/users/:id',async req=>{
   return {ok:true};
 });
 
-app.get('/api/admin/houses',async()=>db.house.findMany({where:{active:true},orderBy:{code:'asc'}}));
+app.get('/api/admin/houses',async()=>{
+  const [catalogHouses,dueHouses,deletedHouseCodes]=await Promise.all([
+    db.house.findMany({where:{active:true},orderBy:{code:'asc'}}),
+    db.due.groupBy({by:['houseCode'],orderBy:{houseCode:'asc'}}),
+    explicitlyDeletedHouseCodes(),
+  ]);
+  const houseMap=new Map(catalogHouses.map(h=>[h.code,h]));
+  for(const h of dueHouses)if(!deletedHouseCodes.has(h.houseCode)&&!houseMap.has(h.houseCode))houseMap.set(h.houseCode,{code:h.houseCode,name:'',note:'',active:true,sheetFingerprint:null,updatedAt:new Date(0)});
+  return [...houseMap.values()].sort((a,b)=>a.code.localeCompare(b.code,'vi'));
+});
 app.post('/api/admin/houses',async req=>{
   const u=me(req),v=input(z.object({code:z.string().trim().min(1).max(30),name:z.string().max(200).default(''),note:z.string().max(1000).default('')}),req.body);
   const code=key(v.code);
@@ -361,9 +383,9 @@ app.post('/api/admin/houses',async req=>{
 app.delete('/api/admin/houses/:code',async req=>{
   const u=me(req),{code:raw}=input(z.object({code:z.string().trim().min(1)}),req.params),code=key(raw);
   await db.$transaction(async tx=>{
-    const old=await tx.house.findUniqueOrThrow({where:{code}});
+    const old=await tx.house.findUnique({where:{code}});
     await tx.userHouse.deleteMany({where:{houseCode:code}});
-    await tx.house.delete({where:{code}});
+    await tx.house.deleteMany({where:{code}});
     await tx.catalogOutbox.upsert({where:{key:'house:'+code},create:{key:'house:'+code,kind:'house-delete'},update:{kind:'house-delete',status:'PENDING',attempts:0,error:null}});
     await audit(tx,u,'HOUSE_DELETE',code,old,undefined);
   });
