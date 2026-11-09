@@ -178,3 +178,160 @@ model SyncState {
   value String
   updatedAt DateTime @updatedAt
 }
+
+// Independent asset and inventory domain. No financial ledger or Google Sheet relations.
+model AssetSequence {
+  prefix String @id
+  nextNo Int @default(1)
+}
+
+model Asset {
+  id String @id @default(uuid())
+  code String @unique
+  category String
+  name String
+  brand String @default("")
+  model String @default("")
+  purchaseDate DateTime?
+  purchaseCost BigInt?
+  warrantyUntil DateTime?
+  conditionPct Int @default(100)
+  status String @default("AVAILABLE")
+  locationType String @default("CENTRAL")
+  houseCode String?
+  room String?
+  note String @default("")
+  imageUrl String?
+  version Int @default(1)
+  createdById String?
+  updatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  movements AssetMovement[]
+  rentals EquipmentRental[]
+  maintenance AssetMaintenance[]
+  @@index([houseCode, room])
+  @@index([category, status])
+}
+
+model AssetMovement {
+  id String @id @default(uuid())
+  assetId String
+  asset Asset @relation(fields:[assetId],references:[id],onDelete:Restrict)
+  fromType String
+  fromHouse String?
+  fromRoom String?
+  toType String
+  toHouse String?
+  toRoom String?
+  reason String
+  actorId String
+  createdAt DateTime @default(now())
+  requestKey String @unique
+  @@index([assetId,createdAt])
+}
+
+model EquipmentRental {
+  id String @id @default(uuid())
+  assetId String
+  asset Asset @relation(fields:[assetId],references:[id],onDelete:Restrict)
+  houseCode String
+  room String
+  startAt DateTime
+  expectedEndAt DateTime?
+  endedAt DateTime?
+  monthlyFee BigInt @default(0)
+  included Boolean @default(false)
+  handoverNote String @default("")
+  handoverDoc String?
+  returnNote String @default("")
+  actorId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([houseCode,room,endedAt])
+  @@index([assetId,endedAt])
+}
+
+model Supply {
+  id String @id @default(uuid())
+  sku String @unique
+  name String
+  category String
+  unit String
+  referencePrice BigInt @default(0)
+  minimumQty Int @default(0)
+  note String @default("")
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  balances StockBalance[]
+  movements StockMovement[]
+  countLines StockCountLine[]
+}
+
+model StockBalance {
+  id String @id @default(uuid())
+  supplyId String
+  supply Supply @relation(fields:[supplyId],references:[id],onDelete:Restrict)
+  locationKey String
+  quantity Int @default(0)
+  updatedAt DateTime @updatedAt
+  @@unique([supplyId,locationKey])
+  @@index([locationKey])
+}
+
+model StockMovement {
+  id String @id @default(uuid())
+  supplyId String
+  supply Supply @relation(fields:[supplyId],references:[id],onDelete:Restrict)
+  operation String
+  quantity Int
+  fromKey String?
+  toKey String?
+  reason String
+  workRef String?
+  actorId String
+  approverId String?
+  requestKey String @unique
+  createdAt DateTime @default(now())
+  @@index([supplyId,createdAt])
+}
+
+model StockCount {
+  id String @id @default(uuid())
+  locationKey String
+  status String @default("DRAFT")
+  note String @default("")
+  actorId String
+  approverId String?
+  createdAt DateTime @default(now())
+  approvedAt DateTime?
+  lines StockCountLine[]
+  @@index([status,locationKey])
+}
+
+model StockCountLine {
+  id String @id @default(uuid())
+  countId String
+  count StockCount @relation(fields:[countId],references:[id],onDelete:Restrict)
+  supplyId String
+  supply Supply @relation(fields:[supplyId],references:[id],onDelete:Restrict)
+  expectedQty Int
+  actualQty Int
+  @@unique([countId,supplyId])
+}
+
+model AssetMaintenance {
+  id String @id @default(uuid())
+  assetId String
+  asset Asset @relation(fields:[assetId],references:[id],onDelete:Restrict)
+  kind String
+  status String @default("OPEN")
+  description String
+  cost BigInt @default(0)
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  actorId String
+  note String @default("")
+  @@index([assetId,status])
+}

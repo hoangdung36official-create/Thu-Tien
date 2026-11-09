@@ -17,4 +17,4 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api ./apps/api
 COPY --from=build /app/apps/web/package.json ./apps/web/package.json
 EXPOSE 4000
-CMD ["npm","run","start","-w","@vincent/api"]
+CMD ["sh","-c","npm run db:migrate -w @vincent/api && exec npm run start -w @vincent/api"]

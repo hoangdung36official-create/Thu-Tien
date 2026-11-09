@@ -11,6 +11,7 @@ import { balance, checkAmount, clean, key, monthValid, newReceiptId, parseDate, 
 import { makePdf, makeZip, type ReportGroup } from './reports.js';
 import { assertBinding, pullSnapshot, runSyncCycle } from './sync.js';
 import { verifySpreadsheet, readSnapshot } from './sheets.js';
+import { registerAssetsRoutes } from './assets.js';
 
 type Identity={id:string;login:string;name:string;role:string;houses:string[];accounts:string[]};
 const app=Fastify({logger:{redact:['req.headers.cookie','req.headers.authorization']},bodyLimit:100000});
@@ -130,6 +131,7 @@ app.addHook('onRequest',async(request,reply)=>{
   }
 });
 const me=(r:any):Identity=>r.identity;
+registerAssetsRoutes(app);
 
 app.get('/api/health',async()=>{await db.$queryRaw`SELECT 1`;return {ok:true,service:'vincent-api'};});
 app.post('/api/auth/login',async(req,reply)=>{

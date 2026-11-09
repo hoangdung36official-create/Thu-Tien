@@ -128,3 +128,8 @@
   .collect-btn{padding:9px 4px;min-height:37px;font-size:11px;gap:5px}
   .collect-btn svg{width:15px;height:15px}
 }
+
+@media(max-width:650px){
+  .bottom-nav{justify-content:stretch;overflow-x:hidden}
+  .bottom-nav button{flex:1 1 0;min-width:0;padding:0 1px;font-size:8px;white-space:nowrap}
+}
