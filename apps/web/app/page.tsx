@@ -45,6 +45,7 @@ function Vincent(){
   const [login,setLogin]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [tab,setTab]=useState<Tab>('dashboard'),[month,setMonth]=useState(()=>today().slice(0,7)),[page,setPage]=useState(1),[duesPage,setDuesPage]=useState(1),[search,setSearch]=useState(''),[filterHouse,setFilterHouse]=useState('');
   const [mobileMoreOpen,setMobileMoreOpen]=useState(false);
+  const [reportView,setReportView]=useState<'staff'|'transfers'>('staff'),[reportFilterOpen,setReportFilterOpen]=useState(false);
   const [pay,setPay]=useState<PayForm|null>(null),[editing,setEditing]=useState(false),[cancel,setCancel]=useState<Receipt|null>(null),[confirm,setConfirm]=useState(false),[allowDuplicate,setAllowDuplicate]=useState(false);
   const [reportAccounts,setReportAccounts]=useState<string[]>([]),[reportAccountSearch,setReportAccountSearch]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[reportStatus,setReportStatus]=useState<'ACTIVE'|'DELETED'>('ACTIVE');
   const [staffFrom,setStaffFrom]=useState(''),[staffTo,setStaffTo]=useState('');
@@ -177,25 +178,42 @@ function Vincent(){
     {tab==='history'&&<section className="surface"><div className="section-title"><h2>Lịch sử giao dịch</h2><span>{history.data?.total||0} giao dịch</span></div><div className="filters"><div className="search-wrap"><History size={16}/><input placeholder="Tìm phòng, nội dung chuyển khoản, mã giao dịch..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}}/></div><select value={filterHouse} onChange={e=>{setFilterHouse(e.target.value);setPage(1)}}><option value="">Tất cả tòa nhà</option>{meta.data?.houses.map(h=><option key={h.code} value={h.code}>{houseLabel(h.code)}</option>)}</select></div>{history.isLoading?<Spinner/>:history.data?.items.length?<><div className="table-scroll"><table><thead><tr><th>Ngày thu</th><th>Nhà / Phòng</th><th>Hình thức</th><th>Số tiền</th><th>Đồng bộ</th><th aria-label="Thao tác"/></tr></thead><tbody>{history.data.items.map(r=><tr key={r.id}><td>{r.receivedAt}<small className="subline">{r.id.slice(0,12)}…</small></td><td><strong>{r.houseCode} · {r.room}</strong><small className="subline">{r.collector}</small></td><td>{r.method}<small className="subline">{r.accountName||''}</small></td><td className="emphasis">{money(r.amount)}</td><td><Badge value={r.syncStatus}/></td><td>{canCollect&&<div className="icon-actions"><button className="row-icon" title="Sửa giao dịch" aria-label="Sửa giao dịch" onClick={()=>openEdit(r)}><Pencil size={16}/></button><button className="row-icon danger" title="Xóa giao dịch" aria-label="Xóa giao dịch" onClick={()=>setCancel(r)}><Trash2 size={16}/></button></div>}</td></tr>)}</tbody></table></div><Pager total={history.data.total} page={page} size={history.data.size} move={setPage}/></>:<Blank message="Chưa có giao dịch trong kỳ này"/>}</section>}
 
     {tab==='reports'&&<>
+      <section className="report-top" aria-label="Tổng hợp doanh thu">
+        <div className="report-top-heading"><div><p className="eyebrow">Báo cáo doanh thu</p><h2>Tháng {Number(month.slice(5))}/{month.slice(0,4)}</h2></div><span>{staffReports.data?.totals.count||0} giao dịch</span></div>
+        <div className="report-summary-grid">
+          <div className="report-summary-card featured"><small>Tổng đã thu</small><strong>{staffReports.data?money(staffReports.data.totals.total):'—'}</strong><span>Doanh thu trong kỳ</span></div>
+          <div className="report-summary-card"><small>Tiền mặt</small><strong>{staffReports.data?money(staffReports.data.totals.cash):'—'}</strong><span>Đã ghi nhận</span></div>
+          <div className="report-summary-card"><small>Chuyển khoản</small><strong>{staffReports.data?money(staffReports.data.totals.transfer):'—'}</strong><span>Đã ghi nhận</span></div>
+          <div className="report-summary-card"><small>Giao dịch</small><strong>{staffReports.data?.totals.count??'—'}</strong><span>Toàn bộ nhân viên</span></div>
+        </div>
+      </section>
+      <div className="report-view-tabs" role="tablist" aria-label="Chế độ báo cáo">
+        <button type="button" role="tab" aria-selected={reportView==='staff'} className={reportView==='staff'?'active':''} onClick={()=>{setReportView('staff');setReportFilterOpen(false)}}><Users size={17}/> Nhân viên</button>
+        <button type="button" role="tab" aria-selected={reportView==='transfers'} className={reportView==='transfers'?'active':''} onClick={()=>{setReportView('transfers');setReportFilterOpen(false)}}><CreditCard size={17}/> Chuyển khoản</button>
+      </div>
+      {reportView==='staff'&&<>
       <section className="surface report-staff">
         <div className="section-title"><div><p className="eyebrow">Doanh thu theo nhân viên</p><h2>Tổng hợp tiền đã thu</h2></div><span>{staffReports.data?.totals.count||0} giao dịch</span></div>
-        <div className="report-summary-grid">
-          <div className="report-summary-card featured"><small>Tổng đã thu</small><strong>{staffReports.data?money(staffReports.data.totals.total):'—'}</strong><span>Kỳ {month.slice(5)}/{month.slice(0,4)}</span></div>
-          <div className="report-summary-card"><small>Tiền mặt</small><strong>{staffReports.data?money(staffReports.data.totals.cash):'—'}</strong><span>Toàn bộ nhân viên trong phạm vi xem</span></div>
-          <div className="report-summary-card"><small>Chuyển khoản</small><strong>{staffReports.data?money(staffReports.data.totals.transfer):'—'}</strong><span>Toàn bộ nhân viên trong phạm vi xem</span></div>
-        </div>
+        <button className="secondary report-filter-trigger" type="button" onClick={()=>setReportFilterOpen(true)}><SlidersHorizontal size={17}/> Bộ lọc</button>
+        {reportFilterOpen&&<button className="report-filter-backdrop" aria-label="Đóng bộ lọc" onClick={()=>setReportFilterOpen(false)}/>}
+        <div className={'report-filter-sheet '+(reportFilterOpen?'open':'')}>
+          <div className="report-filter-sheet-head"><strong>Bộ lọc nhân viên</strong><button className="icon-btn" aria-label="Đóng bộ lọc" onClick={()=>setReportFilterOpen(false)}><X size={19}/></button></div>
         <div className="report-staff-toolbar"><div><strong>Lọc và sắp xếp</strong><small>Dùng ngày ghi nhận thu tiền, độc lập với ngày chuyển khoản.</small></div><div className="report-staff-controls"><label>Sắp xếp<select value={staffReportSort} onChange={e=>setStaffReportSort(e.target.value as typeof staffReportSort)}><option value="revenue-desc">Doanh thu cao → thấp</option><option value="revenue-asc">Doanh thu thấp → cao</option><option value="name">Tên nhân viên A → Z</option></select></label><label>Từ ngày<input type="date" value={staffFrom} onChange={e=>setStaffFrom(e.target.value)}/></label><label>Đến ngày<input type="date" value={staffTo} onChange={e=>setStaffTo(e.target.value)}/></label></div></div>
+          <button type="button" className="primary report-filter-apply" onClick={()=>setReportFilterOpen(false)}>Áp dụng bộ lọc</button>
+        </div>
         {staffReports.isLoading?<Spinner/>:staffReports.error?<p className="error-box">{errText(staffReports.error)}</p>:sortedStaffReports.length?<><div className="staff-mix-chart"><div className="staff-mix-head"><div><strong>Tỷ lệ hình thức thanh toán</strong><small>Tiền mặt và chuyển khoản theo từng nhân viên có phát sinh doanh thu.</small></div><div className="staff-mix-legend"><span><i className="cash"/> Tiền mặt</span><span><i className="transfer"/> Chuyển khoản</span></div></div>{staffChartRows.length?staffChartRows.map(row=>{const cashPct=row.total?Math.round(row.cash/row.total*100):0;const transferPct=100-cashPct;return <div className="staff-mix-row" key={row.id}><div className="staff-mix-label"><strong>{row.name}</strong><small>{money(row.total)}</small></div><div className="staff-mix-track" title={`Tiền mặt ${cashPct}% · Chuyển khoản ${transferPct}%`}><span className="cash" style={{width:`${cashPct}%`}}/><span className="transfer" style={{width:`${transferPct}%`}}/></div><div className="staff-mix-values"><span>{cashPct}%</span><span>{transferPct}%</span></div></div>}):<Blank message="Chưa có doanh thu để hiển thị biểu đồ"/>}</div><div className="table-scroll mobile-card-table"><table className="staff-report-table"><thead><tr><th>Nhân viên</th><th>Vai trò</th><th>Tiền mặt</th><th>Chuyển khoản</th><th>Tổng thu</th><th>Giao dịch</th></tr></thead><tbody>{sortedStaffReports.map(row=><tr key={row.id}><td><strong>{row.name}</strong><small className="subline">{row.login||'Dữ liệu lịch sử'}</small></td><td>{row.role==='ADMIN'?'Quản trị':row.role==='KETOAN'?'Kế toán':row.role==='NV'?'Thu tiền':'Lịch sử'}</td><td>{money(row.cash)}<small className="subline">{row.cashCount} giao dịch</small></td><td>{money(row.transfer)}<small className="subline">{row.transferCount} giao dịch</small></td><td className="emphasis">{money(row.total)}</td><td>{row.count}</td></tr>)}</tbody></table></div></>:<Blank message="Chưa có dữ liệu thu theo nhân viên trong kỳ này"/>}
       </section>
+      </>}
+      {reportView==='transfers'&&<>
       <section className="surface report-panel">
         <div className="report-intro">
           <div><p className="eyebrow">Đối soát chuyển khoản</p><h2>Báo cáo thu qua tài khoản</h2><p>Lọc theo ngày chuyển, tài khoản nhận và trạng thái giao dịch trước khi xem chi tiết hoặc xuất file.</p></div>
-          <div className="report-kpis">
-            <div className="report-kpi"><small>Tổng tiền</small><strong>{reports.data?money(reports.data.total):'—'}</strong><span>Trong bộ lọc hiện tại</span></div>
-            <div className="report-kpi compact"><small>Giao dịch</small><strong>{reportTransactionCount}</strong><span>Chuyển khoản</span></div>
-            <div className="report-kpi compact"><small>Tài khoản lọc</small><strong>{reportAccounts.length||'Tất cả'}</strong><span>{reportAccounts.length?'Đang chọn':'Không giới hạn'}</span></div>
-          </div>
+          <p className="report-filtered-total">{reportTransactionCount} giao dịch · {reports.data?money(reports.data.total):'—'}</p>
         </div>
+        <button type="button" className="secondary report-filter-trigger" onClick={()=>setReportFilterOpen(true)}><SlidersHorizontal size={17}/> Bộ lọc {reportAccounts.length>0?`(${reportAccounts.length} tài khoản)`:''}</button>
+        {reportFilterOpen&&<button className="report-filter-backdrop" aria-label="Đóng bộ lọc" onClick={()=>setReportFilterOpen(false)}/>}
+        <div className={'report-filter-sheet '+(reportFilterOpen?'open':'')}>
+          <div className="report-filter-sheet-head"><strong>Bộ lọc chuyển khoản</strong><button className="icon-btn" aria-label="Đóng bộ lọc" onClick={()=>setReportFilterOpen(false)}><X size={19}/></button></div>
         <div className="report-filters">
           <label>Ngày chuyển từ<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label>
           <label>Đến ngày<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label>
@@ -209,12 +227,15 @@ function Vincent(){
           <div className="report-account-search"><Search size={16}/><input aria-label="Tìm tài khoản nhận" placeholder="Tìm theo tên tài khoản hoặc ngân hàng" value={reportAccountSearch} onChange={e=>setReportAccountSearch(e.target.value)}/></div>
           <div className="checkbox-row report-accounts">{reportAccountOptions.length?reportAccountOptions.map(a=><label className={'check-pill '+(reportAccounts.includes(a.name)?'selected':'')} key={a.name}><input type="checkbox" checked={reportAccounts.includes(a.name)} onChange={e=>setReportAccounts(e.target.checked?[...new Set([...reportAccounts,a.name])]:reportAccounts.filter(x=>x!==a.name))}/><span><strong>{a.name}</strong><small>{a.bank||'Tài khoản lịch sử'}</small></span></label>):<span className="report-account-empty">Không tìm thấy tài khoản phù hợp.</span>}</div>
         </div>
+          <button type="button" className="primary report-filter-apply" onClick={()=>setReportFilterOpen(false)}>Xem kết quả</button>
+        </div>
         <div className="export-bar"><button className="primary" disabled={pending} onClick={()=>download('pdf')}><Download size={17}/> Xuất PDF tổng hợp</button><button className="secondary" disabled={pending} onClick={()=>download('zip')}><FileDown size={17}/> PDF riêng từng tài khoản (ZIP)</button></div>
       </section>
       <section className="surface report-results">
         <div className="section-title"><div><p className="eyebrow">Chi tiết đối soát</p><h2>Theo tài khoản nhận</h2></div><strong>{reports.data?money(reports.data.total):'—'}</strong></div>
         {reports.isLoading?<Spinner/>:reports.data?.groups.some(g=>g.count>0)?reports.data.groups.filter(g=>g.count>0).sort((a,b)=>b.total-a.total).map(g=><div className="report-group" key={g.account.name}><div className="report-account"><div><strong>{g.account.name}</strong><small>{g.account.bank||'Tài khoản lịch sử'}</small></div><div className="report-total"><strong>{money(g.total)}</strong><small>{g.count} giao dịch</small></div></div><div className="table-scroll mobile-card-table"><table className="transfer-report-table"><thead><tr><th>Ngày chuyển</th><th>Nhà / Phòng</th><th>Nội dung chuyển khoản</th><th>Số tiền</th></tr></thead><tbody>{g.receipts.map(r=><tr key={r.id}><td>{r.transferAt}</td><td><strong>{r.houseCode} · {r.room}</strong></td><td className="memo-cell">{r.transferMemo}</td><td className="emphasis">{money(r.amount)}</td></tr>)}</tbody></table></div></div>):<Blank message="Không có giao dịch phù hợp với bộ lọc"/>}
       </section>
+      </>}
     </>}
 
     {tab==='assets'&&<Assets user={user} houses={meta.data?.houses||[]}/>}
@@ -227,7 +248,7 @@ function Vincent(){
     </>}
     </main></div>
     <nav className="bottom-nav" aria-label="Điều hướng mobile">
-      {nav.filter(n=>['dashboard','dues','collect','reports'].includes(n.id)).map(n=><button key={n.id} className={(tab===n.id?'active ':'')+(n.id==='collect'?'primary':'')} onClick={()=>navTo(n.id)}><n.Icon size={21} strokeWidth={tab===n.id?2.2:1.8}/><span>{n.title}</span></button>)}
+      {nav.filter(n=>['dashboard','dues','collect','reports'].includes(n.id)).map(n=><button key={n.id} className={(tab===n.id?'active ':'')+(n.id==='collect'?'primary':'')} onClick={()=>navTo(n.id)}>{n.id==='collect'?<Plus size={21} strokeWidth={tab===n.id?2.2:1.8}/>:<n.Icon size={21} strokeWidth={tab===n.id?2.2:1.8}/>}<span>{n.title}</span></button>)}
       <button className={['history','assets','admin'].includes(tab)||mobileMoreOpen?'active':''} onClick={()=>setMobileMoreOpen(v=>!v)} aria-expanded={mobileMoreOpen} aria-controls="mobile-more-menu"><MoreHorizontal size={22}/><span>Thêm</span></button>
     </nav>
 

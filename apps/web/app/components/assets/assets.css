@@ -2,3 +2,15 @@
 @media(max-width:1100px){.asset-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.asset-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.asset-module{gap:10px}.asset-toolbar{margin:0 -15px;padding:0 15px}.asset-refresh{flex:0 0 auto}.asset-tabs button{padding:8px 10px}.asset-tabs button span{font-size:10px}.asset-kpis{grid-template-columns:1fr 1fr;gap:7px}.asset-kpi{padding:12px 10px;border-radius:10px}.asset-kpi.featured{grid-column:1/-1}.asset-kpi strong{font-size:18px}.asset-overview-grid{grid-template-columns:1fr;gap:10px}.asset-panel{padding:14px 11px;border-radius:11px}.asset-panel-head{gap:9px;margin-bottom:12px}.asset-panel-head h3{font-size:14px}.asset-head-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.asset-panel-head:has(.asset-head-actions){display:grid}.asset-filters{grid-template-columns:1fr;gap:7px}.asset-card-grid{grid-template-columns:1fr;gap:8px}.asset-card{padding:12px 10px}.asset-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.asset-actions button{min-height:34px}.asset-stock-list>div,.asset-count-list>div{padding:10px 9px;gap:8px}.asset-count-list>div{display:grid;grid-template-columns:1fr auto}.asset-count-list>div>button{grid-column:1/-1}.asset-history>div{grid-template-columns:55px 1fr}.asset-history>div>div:last-child{grid-column:2;text-align:left}.asset-drawer-backdrop{align-items:flex-end}.asset-drawer{width:100%;height:auto;max-height:92dvh;border-radius:18px 18px 0 0;padding:20px 16px calc(22px + env(safe-area-inset-bottom))}.asset-form-grid{grid-template-columns:1fr 1fr;gap:8px}.asset-bars>div{grid-template-columns:80px 1fr 24px}}
 @media(max-width:380px){.asset-form-grid{grid-template-columns:1fr}.asset-kpis{grid-template-columns:1fr}.asset-kpi.featured{grid-column:auto}}
+
+/* Show all seven asset sections without horizontal scrolling on phones. */
+@media(max-width:650px){
+  .asset-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 38px;align-items:start;gap:7px;margin:0;padding:0}
+  .asset-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;overflow:visible;min-width:0;padding:0}
+  .asset-tabs button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:58px;padding:7px 2px;white-space:normal;text-align:center}
+  .asset-tabs button span{font-size:10px;line-height:1.2}
+  .asset-refresh{width:38px;height:58px;justify-content:center;padding:0}
+}
+@media(max-width:380px){
+  .asset-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
