@@ -133,3 +133,28 @@
   .bottom-nav{justify-content:stretch;overflow-x:hidden}
   .bottom-nav button{flex:1 1 0;min-width:0;padding:0 1px;font-size:8px;white-space:nowrap}
 }
+
+.mobile-more-backdrop,.mobile-more-sheet{display:none}
+
+@media(max-width:650px){
+  .bottom-nav{height:calc(68px + env(safe-area-inset-bottom));padding:6px 8px calc(7px + env(safe-area-inset-bottom));z-index:42}
+  .bottom-nav button{position:relative;gap:3px;font-size:9px;border-radius:11px;transition:color .16s ease,background .16s ease}
+  .bottom-nav button.primary svg{width:38px;height:38px;padding:9px;margin-top:-16px;border-radius:12px;background:var(--navy);color:#fff;stroke-width:2.2px;box-shadow:0 7px 18px #173f5930}
+  .bottom-nav button.primary.active{color:var(--navy)}
+  .mobile-more-backdrop{display:block;position:fixed;inset:0 0 calc(68px + env(safe-area-inset-bottom));z-index:40;border:0;background:#10263666;padding:0}
+  .mobile-more-sheet{display:block;position:fixed;left:0;right:0;bottom:calc(68px + env(safe-area-inset-bottom));z-index:41;background:#fff;border-radius:22px 22px 0 0;padding:10px 15px 17px;box-shadow:0 -18px 55px #1026362b;animation:mobile-sheet-in .18s ease-out}
+  .mobile-more-grab{width:42px;height:4px;border-radius:999px;background:#d5dfe5;margin:0 auto 13px}
+  .mobile-more-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .mobile-more-head h2{font-size:18px;margin:0 0 2px}
+  .mobile-more-head p{margin:0;color:#8294a1;font-size:11px}
+  .mobile-more-list{display:grid;gap:8px}
+  .mobile-more-list>button{width:100%;border:1px solid #e1e9ee;background:#fbfdfe;border-radius:13px;min-height:58px;padding:8px 10px;display:grid;grid-template-columns:40px 1fr 20px;gap:10px;align-items:center;text-align:left;color:var(--ink)}
+  .mobile-more-list>button>span:nth-child(2){min-width:0}
+  .mobile-more-list strong,.mobile-more-list small{display:block}
+  .mobile-more-list strong{font-size:13px}
+  .mobile-more-list small{margin-top:2px;color:#8798a4;font-size:10px;font-weight:500;white-space:normal}
+  .mobile-more-list>button>svg{color:#9aabb6}
+  .mobile-more-icon{width:38px;height:38px;border-radius:11px;background:#edf4f8;color:var(--navy);display:grid;place-items:center}
+  .mobile-more-list>button.logout .mobile-more-icon{background:#fff0ef;color:var(--red)}
+  @keyframes mobile-sheet-in{from{transform:translateY(16px);opacity:.7}to{transform:translateY(0);opacity:1}}
+}
