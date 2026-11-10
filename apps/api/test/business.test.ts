@@ -36,8 +36,11 @@ test('đọc và ghi NHẬT KÝ đúng A:M, tách ngày thu và chuyển khoản
 test('kiểm tra ngày nhuận, nhập sai ngày và công nợ',()=>{
   assert.equal(dayText(parseDate('29/02/2024')),'29/02/2024');
   assert.throws(()=>parseDate('29/02/2025'),/không tồn tại/);
-  assert.throws(()=>checkAmount(250n,200n),/không vượt/);
-  checkAmount(200n,200n);
+  checkAmount(250n);
+  checkAmount(200n);
+  assert.throws(()=>checkAmount(0n),/> 0/);
+  assert.throws(()=>checkAmount(-1n),/> 0/);
+  assert.throws(()=>checkAmount(1000000001n),/1 tỷ/);
   assert.equal(balance(200n,120n),80n);
   assert.equal(balance(200n,300n),0n);
 });

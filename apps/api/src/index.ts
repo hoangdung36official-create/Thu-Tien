@@ -96,11 +96,10 @@ function validateReceipt(data:z.infer<typeof fields>,u:Identity){
 async function lockRoom(tx:Prisma.TransactionClient,month:string,house:string,room:string){
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${month+'|'+house+'|'+room}))`;
 }
-async function ensureAmount(tx:Prisma.TransactionClient,data:{month:string;houseCode:string;room:string;amount:bigint},exclude?:string){
+async function ensureAmount(tx:Prisma.TransactionClient,data:{month:string;houseCode:string;room:string;amount:bigint}){
   const due=await tx.due.findUnique({where:{month_houseCode_room:{month:data.month,houseCode:data.houseCode,room:data.room}}});
   if(!due)throw new Error('Phòng/tháng chưa có số cần thu trong NHẬP CẦN THU');
-  const paid=await tx.receipt.aggregate({where:{month:data.month,houseCode:data.houseCode,room:data.room,status:'ACTIVE',...(exclude?{id:{not:exclude}}:{})},_sum:{amount:true}});
-  checkAmount(data.amount,balance(due.amount,paid._sum.amount||0n));
+  checkAmount(data.amount);
 }
 async function enqueue(tx:Prisma.TransactionClient,id:string,version:number,operation:string){
   await tx.outbox.upsert({where:{receiptId:id},create:{receiptId:id,version,operation},update:{version,operation,status:'PENDING',attempts:0,error:null,nextAttemptAt:new Date()}});
@@ -201,20 +200,20 @@ app.get('/api/dashboard',async req=>{
   const where:Prisma.DueWhereInput={month:q.month,...(!all(u)?{houseCode:{in:u.houses}}:{})};
   const [dues,receipts]=await Promise.all([db.due.findMany({where}),db.receipt.findMany({where:{month:q.month,status:'ACTIVE',...(!all(u)?{houseCode:{in:u.houses}}:{})}})]);
   const paidMap=new Map<string,bigint>();for(const r of receipts){const k=r.houseCode+'|'+r.room;paidMap.set(k,(paidMap.get(k)||0n)+r.amount);}
-  const byHouse=new Map<string,{due:bigint;paid:bigint}>();
-  let due=0n,paid=0n,full=0,partial=0,unpaid=0;
-  for(const d of dues){const p=paidMap.get(d.houseCode+'|'+d.room)||0n;due+=d.amount;paid+=p;
+  const byHouse=new Map<string,{due:bigint;paid:bigint;remaining:bigint}>();
+  let due=0n,paid=0n,remaining=0n,full=0,partial=0,unpaid=0;
+  for(const d of dues){const p=paidMap.get(d.houseCode+'|'+d.room)||0n,r=balance(d.amount,p);due+=d.amount;paid+=p;remaining+=r;
     if(p>=d.amount)full++;else if(p>0n)partial++;else unpaid++;
-    const curr=byHouse.get(d.houseCode)||{due:0n,paid:0n};curr.due+=d.amount;curr.paid+=p;byHouse.set(d.houseCode,curr);
+    const curr=byHouse.get(d.houseCode)||{due:0n,paid:0n,remaining:0n};curr.due+=d.amount;curr.paid+=p;curr.remaining+=r;byHouse.set(d.houseCode,curr);
   }
   const visible=u.role==='NV'?receipts.filter(r=>r.createdById===u.id):receipts;
   const money=(rs:Receipt[])=>safeNumber(sum(rs.map(r=>r.amount)));
   const byAccounts=new Map<string,bigint>();for(const r of visible)if(r.method==='Chuyển khoản'&&r.accountName)byAccounts.set(r.accountName,(byAccounts.get(r.accountName)||0n)+r.amount);
   const byDays=new Map<string,bigint>();for(const r of visible){const d=dayText(r.receivedAt);byDays.set(d,(byDays.get(d)||0n)+r.amount);}
-  return {month:q.month,scope:all(u)?'Toàn hệ thống':'Nhà được phân quyền',due:safeNumber(due),paid:safeNumber(paid),remaining:safeNumber(balance(due,paid)),
+  return {month:q.month,scope:all(u)?'Toàn hệ thống':'Nhà được phân quyền',due:safeNumber(due),paid:safeNumber(paid),remaining:safeNumber(remaining),
     cash:money(visible.filter(r=>r.method==='Tiền mặt')),transfer:money(visible.filter(r=>r.method==='Chuyển khoản')),myCollected:money(visible),
     roomsPaid:full,roomsPartial:partial,roomsUnpaid:unpaid,count:visible.length,
-    houses:[...byHouse].map(([code,s])=>({code,due:safeNumber(s.due),paid:safeNumber(s.paid),remaining:safeNumber(balance(s.due,s.paid))})),
+    houses:[...byHouse].map(([code,s])=>({code,due:safeNumber(s.due),paid:safeNumber(s.paid),remaining:safeNumber(s.remaining)})),
     accounts:[...byAccounts].map(([name,n])=>({name,amount:safeNumber(n)})),daily:[...byDays].map(([day,n])=>({day,amount:safeNumber(n)}))};
 });
 
@@ -268,7 +267,7 @@ app.patch('/api/receipts/:id',async req=>{
     for(const room of [...new Set(rooms)].sort())await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${room}))`;
     if(old.version!==body.version)throw Object.assign(new Error('Giao dịch đã được chỉnh sửa ở nơi khác'),{statusCode:409});
     if(old.source==='LEGACY')throw new Error('Giao dịch V6 thiếu mã K cần đối soát trước khi sửa');
-    await ensureAmount(tx,data,id);
+    await ensureAmount(tx,data);
     const updated=await tx.receipt.update({where:{id},data:{...data,collector:old.collector,version:{increment:1},syncStatus:'PENDING',updatedById:u.id}});
     await enqueue(tx,id,updated.version,'UPSERT');await audit(tx,u,'RECEIPT_EDIT',id,old,updated);
     return updated;
@@ -321,6 +320,22 @@ app.get('/api/reports/staff',async req=>{
   }
   const employees=[...rows.values()].sort((a,b)=>Number(b.total-a.total)||a.name.localeCompare(b.name,'vi')).map(row=>({...row,cash:safeNumber(row.cash),transfer:safeNumber(row.transfer),total:safeNumber(row.total)}));
   return {employees,totals:{cash:safeNumber(sum([...rows.values()].map(r=>r.cash))),transfer:safeNumber(sum([...rows.values()].map(r=>r.transfer))),total:safeNumber(sum([...rows.values()].map(r=>r.total))),count:[...rows.values()].reduce((n,r)=>n+r.count,0)}};
+});
+
+app.get('/api/reports/overpayments',async req=>{
+  const u=me(req),q=input(z.object({month:z.string()}),req.query);
+  if(!monthValid(q.month))throw new Error('Tháng không hợp lệ');
+  const houseScope=all(u)?undefined:u.houses;
+  const [dues,paid]=await Promise.all([
+    db.due.findMany({where:{month:q.month,...(houseScope?{houseCode:{in:houseScope}}:{})},select:{houseCode:true,room:true,amount:true}}),
+    db.receipt.groupBy({by:['houseCode','room'],where:{month:q.month,status:'ACTIVE',...(houseScope?{houseCode:{in:houseScope}}:{})},_sum:{amount:true}}),
+  ]);
+  const paidMap=new Map(paid.map(row=>[row.houseCode+'|'+row.room,row._sum.amount||0n]));
+  const items=dues.map(d=>{
+    const paidAmount=paidMap.get(d.houseCode+'|'+d.room)||0n;
+    return {houseCode:d.houseCode,room:d.room,due:d.amount,paid:paidAmount,excess:paidAmount>d.amount?paidAmount-d.amount:0n};
+  }).filter(row=>row.excess>0n).sort((a,b)=>a.excess===b.excess?0:b.excess>a.excess?1:-1);
+  return {count:items.length,total:safeNumber(sum(items.map(row=>row.excess))),items:items.map(row=>({houseCode:row.houseCode,room:row.room,due:safeNumber(row.due),paid:safeNumber(row.paid),excess:safeNumber(row.excess)}))};
 });
 
 app.get('/api/reports/transfers',async(req,reply)=>{

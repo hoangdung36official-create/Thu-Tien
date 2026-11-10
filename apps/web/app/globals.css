@@ -101,6 +101,7 @@
 .collection-status.complete{color:#287451;background:#eaf6ee}
 .collection-status.partial{color:#9b6c22;background:#fff4df}
 .collection-status.unpaid{color:#6b7e8d;background:#edf2f5}
+.collection-status.overpaid{color:#8a5b18;background:#fff0cf}
 .collection-money{gap:8px}
 .collection-line{display:flex;align-items:baseline;justify-content:space-between;gap:7px;min-width:0}
 .collection-line span{font-size:11px;color:#7d909d}
@@ -108,6 +109,7 @@
 .collection-remaining{display:grid;gap:3px;padding-top:8px;border-top:1px dashed #dfe8ed}
 .collection-remaining small{font-size:11px;color:#697f8d}
 .collection-remaining strong{font-size:19px;line-height:1.2;overflow-wrap:anywhere}
+.collection-excess small,.collection-excess strong{color:#9a651d}
 .collection-done{display:flex;align-items:center;justify-content:center;gap:6px;min-height:39px;font-size:11px;font-weight:700;color:#44856c}
 
 @media(max-width:650px){
@@ -168,9 +170,22 @@
 .report-top .report-summary-grid{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:0}
 .report-top .report-summary-card{min-width:0}
 .report-top .report-summary-card strong{overflow-wrap:anywhere}
-.report-view-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#edf3f6;border:1px solid #e0e9ed;border-radius:12px;padding:5px;margin-bottom:13px}
+.report-view-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;background:#edf3f6;border:1px solid #e0e9ed;border-radius:12px;padding:5px;margin-bottom:13px}
 .report-view-tabs button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:41px;border:0;border-radius:9px;background:transparent;color:#697f8e;font-weight:750;font-size:12px}
 .report-view-tabs button.active{color:var(--navy);background:#fff;box-shadow:0 2px 8px #173f5712}
+.report-group>summary{list-style:none;cursor:pointer}
+.report-group>summary::-webkit-details-marker{display:none}
+.report-group>summary:focus-visible{outline:3px solid #9cbed0;outline-offset:3px;border-radius:8px}
+.report-account-copy,.report-account-side{display:flex;align-items:center;gap:10px;min-width:0}
+.report-account-copy{display:block}
+.report-account-side{justify-content:flex-end}
+.report-disclosure-icon{flex:0 0 auto;color:#86a0ae;transition:transform .16s ease}
+.report-group[open] .report-disclosure-icon{transform:rotate(90deg)}
+.report-group:not([open]) .report-account{padding-bottom:10px}
+.overpayment-total{min-width:180px;border:1px solid #eadfc8;background:#fff9ef;border-radius:12px;padding:13px 15px;display:grid;gap:2px;text-align:right}
+.overpayment-total small,.overpayment-total span{color:#8b7858}
+.overpayment-total strong{font-size:20px;color:#98601a;letter-spacing:-.035em}
+.overpayment-value{color:#98601a!important}
 .report-filter-trigger,.report-filter-backdrop,.report-filter-sheet-head,.report-filter-apply{display:none}
 .report-filtered-total{margin:0;color:var(--navy);font-weight:800;font-size:15px;white-space:normal}
 
@@ -185,7 +200,20 @@
   .report-top .report-summary-card small{font-size:10px}
   .report-top .report-summary-card span{font-size:9px}
   .report-view-tabs{margin-bottom:10px}
-  .report-view-tabs button{min-height:40px}
+  .report-view-tabs button{min-height:40px;gap:4px;padding:5px 3px;font-size:10px;white-space:nowrap}
+  .report-view-tabs button svg{width:15px;height:15px}
+  .report-account-copy strong{font-size:12px}
+  .report-account-copy small{font-size:10px}
+  .report-account-side{gap:5px}
+  .report-disclosure-icon{width:16px;height:16px}
+  .overpayment-total{min-width:0;text-align:left;padding:11px 12px}
+  .overpayment-total strong{font-size:18px}
+  .overpayment-report-table td:nth-child(1){grid-column:1/-1}
+  .overpayment-report-table td:nth-child(1)::before{content:'Nhà / Phòng'}
+  .overpayment-report-table td:nth-child(2)::before{content:'Phải thu'}
+  .overpayment-report-table td:nth-child(3)::before{content:'Đã thu'}
+  .overpayment-report-table td:nth-child(4){grid-column:1/-1;text-align:right}
+  .overpayment-report-table td:nth-child(4)::before{content:'Thu thừa';text-align:left}
   .report-staff,.report-panel{position:relative}
   .report-filter-trigger{display:inline-flex;align-items:center;gap:7px;min-height:38px;width:100%;justify-content:center;margin-bottom:13px}
   .report-filter-backdrop{display:block;position:fixed;inset:0;z-index:70;border:0;background:#0b233560;padding:0}

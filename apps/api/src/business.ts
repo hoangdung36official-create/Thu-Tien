@@ -133,8 +133,8 @@ export function journalValues(v: {id:string;month:string;houseCode:string;room:s
     v.method,v.payer,v.note,v.id,serial(v.transferAt),v.transferMemo];
 }
 export function newReceiptId() { return `VW-${randomUUID()}`; }
-export function checkAmount(amount: bigint, remaining: bigint) {
-  if (amount <= 0n || amount > 1000000000n || amount > remaining) throw new Error('Số tiền phải > 0 và không vượt số còn phải thu (tối đa 1 tỷ/giao dịch)');
+export function checkAmount(amount: bigint) {
+  if (amount <= 0n || amount > 1000000000n) throw new Error('Số tiền phải > 0 và tối đa 1 tỷ/giao dịch');
 }
 export function balance(due:bigint, paid:bigint) { return due > paid ? due - paid : 0n; }
 export function safeSheetText(value: string) {

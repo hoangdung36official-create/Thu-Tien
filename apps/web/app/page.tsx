@@ -14,6 +14,7 @@ type Meta={houses:House[];accounts:Account[];months:string[];dueLastRead:string|
 type Dashboard={month:string;due:number;paid:number;remaining:number;cash:number;transfer:number;myCollected:number;roomsPaid:number;roomsPartial:number;roomsUnpaid:number;count:number;houses:{code:string;due:number;paid:number;remaining:number}[];accounts:{name:string;amount:number}[];daily:{day:string;amount:number}[]};
 type Report={groups:{account:Account;count:number;total:number;receipts:Receipt[]}[];total:number;accountOptions:Account[]};
 type StaffReport={employees:{id:string;name:string;login:string;role:string;cash:number;transfer:number;total:number;cashCount:number;transferCount:number;count:number}[];totals:{cash:number;transfer:number;total:number;count:number}};
+type OverpaymentReport={count:number;total:number;items:{houseCode:string;room:string;due:number;paid:number;excess:number}[]};
 type Sync={binding:string;collectionsEnabled:boolean;state:{key:string;value:string}[];outbox:{status:string;_count:number}[];conflicts:{id:string;entityType:string;entityId:string;reason:string;createdAt:string}[];catalog:{key:string;status:string;error:string|null}[]};
 
 const money=(n:number)=>new Intl.NumberFormat('vi-VN').format(n)+' đ';
@@ -31,7 +32,7 @@ const parameters=(v:Record<string,string|number|undefined>)=>'?' + new URLSearch
 const nav=[{id:'dashboard',title:'Tổng quan',Icon:LayoutDashboard},{id:'dues',title:'Hóa đơn',Icon:Wallet},{id:'collect',title:'Thu tiền',Icon:HandCoins},{id:'history',title:'Lịch sử',Icon:History},{id:'reports',title:'Báo cáo',Icon:FileDown},{id:'assets',title:'Tài sản',Icon:Boxes},{id:'admin',title:'Quản trị',Icon:Settings2}] as const;
 type Tab=typeof nav[number]['id'];
 type PayForm={id:string;month:string;houseCode:string;room:string;amount:string;method:'Tiền mặt'|'Chuyển khoản';accountName:string;note:string;transferAt:string;transferMemo:string;version?:number};
-function freshPay(d:Due):PayForm{return {id:'VW-'+crypto.randomUUID(),month:d.month,houseCode:d.houseCode,room:d.room,amount:String(d.remaining),method:'Tiền mặt',accountName:'',note:'',transferAt:today(),transferMemo:''};}
+function freshPay(d:Due):PayForm{return {id:'VW-'+crypto.randomUUID(),month:d.month,houseCode:d.houseCode,room:d.room,amount:d.remaining?String(d.remaining):'',method:'Tiền mặt',accountName:'',note:'',transferAt:today(),transferMemo:''};}
 
 function useCall<T>(key:unknown[],path:string,enabled=true){return useQuery<T>({queryKey:key,queryFn:()=>api<T>(path),enabled,staleTime:25000,refetchOnWindowFocus:true});}
 function Badge({value}:{value:string}){const normal=value==='SYNCED'||value==='ACTIVE';const bad=value==='FAILED'||value==='CONFLICT'||value==='DELETED';return <span className={'badge '+(normal?'badge-ok':bad?'badge-danger':'badge-wait')}>{({SYNCED:'Đã đồng bộ',PENDING:'Chờ đồng bộ',FAILED:'Đồng bộ lỗi',CONFLICT:'Xung đột',ACTIVE:'Đang dùng',DELETED:'Đã hủy'} as Record<string,string>)[value]||value}</span>}
@@ -45,7 +46,7 @@ function Vincent(){
   const [login,setLogin]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [tab,setTab]=useState<Tab>('dashboard'),[month,setMonth]=useState(()=>today().slice(0,7)),[page,setPage]=useState(1),[duesPage,setDuesPage]=useState(1),[search,setSearch]=useState(''),[filterHouse,setFilterHouse]=useState('');
   const [mobileMoreOpen,setMobileMoreOpen]=useState(false);
-  const [reportView,setReportView]=useState<'staff'|'transfers'>('staff'),[reportFilterOpen,setReportFilterOpen]=useState(false);
+  const [reportView,setReportView]=useState<'staff'|'transfers'|'overpayments'>('staff'),[reportFilterOpen,setReportFilterOpen]=useState(false);
   const [pay,setPay]=useState<PayForm|null>(null),[editing,setEditing]=useState(false),[cancel,setCancel]=useState<Receipt|null>(null),[confirm,setConfirm]=useState(false),[allowDuplicate,setAllowDuplicate]=useState(false);
   const [reportAccounts,setReportAccounts]=useState<string[]>([]),[reportAccountSearch,setReportAccountSearch]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[reportStatus,setReportStatus]=useState<'ACTIVE'|'DELETED'>('ACTIVE');
   const [staffFrom,setStaffFrom]=useState(''),[staffTo,setStaffTo]=useState('');
@@ -83,8 +84,9 @@ function Vincent(){
   const availableMonths=[...new Set([today().slice(0,7),month,...(meta.data?.months||[])])].filter(Boolean).sort().reverse();
   const history=useCall<{total:number;items:Receipt[];size:number}>(['history',user?.id,month,page,search,filterHouse],'/receipts'+parameters({month,page,search,house:filterHouse}),!!user&&!!month&&tab==='history');
   const repParams={month,from:toApiDate(from),to:toApiDate(to),accountNames:reportAccounts.join(','),status:reportStatus};
-  const reports=useCall<Report>(['reports',user?.id,repParams],'/reports/transfers'+parameters(repParams),!!user&&!!month&&tab==='reports');
+  const reports=useCall<Report>(['reports',user?.id,repParams],'/reports/transfers'+parameters(repParams),!!user&&!!month&&tab==='reports'&&reportView==='transfers');
   const staffReports=useCall<StaffReport>(['reports','staff',user?.id,month,staffFrom,staffTo],'/reports/staff'+parameters({month,from:toApiDate(staffFrom),to:toApiDate(staffTo)}),!!user&&!!month&&tab==='reports');
+  const overpaymentReports=useCall<OverpaymentReport>(['reports','overpayments',user?.id,month],'/reports/overpayments'+parameters({month}),!!user&&!!month&&tab==='reports'&&reportView==='overpayments');
   const sortedStaffReports=useMemo(()=>{
     const rows=[...(staffReports.data?.employees||[])];
     if(staffReportSort==='name')return rows.sort((a,b)=>a.name.localeCompare(b.name,'vi'));
@@ -163,15 +165,15 @@ function Vincent(){
       </div>
       {!canCollect&&<div className="readonly-note"><ShieldCheck size={18}/><span>{user.role==='KETOAN'?'Tài khoản kế toán chỉ được xem và đối soát dữ liệu.':'Hệ thống đang ở chế độ chỉ xem.'}</span></div>}
       {dues.isLoading?<Spinner/>:dues.data?.items.length?<><div className="collection-grid">
-        {dues.data.items.map(d=><article className={'collection-card '+(d.remaining===0?'settled':'')} key={d.houseCode+'|'+d.room}>
-          <div className="collection-room"><span className="collection-house">{houseLabel(d.houseCode)}</span><strong>Phòng {d.room}</strong><span className={'collection-status '+(d.remaining===0?'complete':d.paid>0?'partial':'unpaid')}>{d.remaining===0?'Đã thu đủ':d.paid>0?'Thu một phần':'Chưa thu'}</span></div>
+        {dues.data.items.map(d=>{const excess=Math.max(0,d.paid-d.due),overpaid=excess>0;return <article className={'collection-card '+(d.remaining===0?'settled':'')} key={d.houseCode+'|'+d.room}>
+          <div className="collection-room"><span className="collection-house">{houseLabel(d.houseCode)}</span><strong>Phòng {d.room}</strong><span className={'collection-status '+(overpaid?'overpaid':d.remaining===0?'complete':d.paid>0?'partial':'unpaid')}>{overpaid?'Thu thừa':d.remaining===0?'Đã thu đủ':d.paid>0?'Thu một phần':'Chưa thu'}</span></div>
           <div className="collection-money">
             <div className="collection-line"><span>Phải thu</span><b>{money(d.due)}</b></div>
             <div className="collection-line"><span>Đã thu</span><b>{money(d.paid)}</b></div>
-            <div className="collection-remaining"><small>Còn thiếu</small><strong>{money(d.remaining)}</strong></div>
+            <div className={'collection-remaining '+(overpaid?'collection-excess':'')}><small>{overpaid?'Thu thừa':'Còn thiếu'}</small><strong>{money(overpaid?excess:d.remaining)}</strong></div>
           </div>
-          {d.remaining>0?<button className="primary collect-btn" disabled={!canCollect} onClick={()=>{setPay(freshPay(d));setConfirm(false);setEditing(false);setAllowDuplicate(false)}}><HandCoins size={17}/> Thu tiền</button>:<span className="collection-done"><Check size={15}/> Đã hoàn tất</span>}
-        </article>)}
+          {d.remaining>0||canCollect?<button className="primary collect-btn" disabled={!canCollect} onClick={()=>{setPay(freshPay(d));setConfirm(false);setEditing(false);setAllowDuplicate(false)}}><HandCoins size={17}/> {d.remaining>0?'Thu tiền':'Thu thêm'}</button>:<span className="collection-done"><Check size={15}/> Đã hoàn tất</span>}
+        </article>})}
       </div><Pager total={dues.data.total} page={duesPage} size={100} move={setDuesPage}/></>:<Blank message="Không có phòng phù hợp trong kỳ thu này"/>}
     </section>}
 
@@ -190,6 +192,7 @@ function Vincent(){
       <div className="report-view-tabs" role="tablist" aria-label="Chế độ báo cáo">
         <button type="button" role="tab" aria-selected={reportView==='staff'} className={reportView==='staff'?'active':''} onClick={()=>{setReportView('staff');setReportFilterOpen(false)}}><Users size={17}/> Nhân viên</button>
         <button type="button" role="tab" aria-selected={reportView==='transfers'} className={reportView==='transfers'?'active':''} onClick={()=>{setReportView('transfers');setReportFilterOpen(false)}}><CreditCard size={17}/> Chuyển khoản</button>
+        <button type="button" role="tab" aria-selected={reportView==='overpayments'} className={reportView==='overpayments'?'active':''} onClick={()=>{setReportView('overpayments');setReportFilterOpen(false)}}><Wallet size={17}/> Thu thừa</button>
       </div>
       {reportView==='staff'&&<>
       <section className="surface report-staff">
@@ -233,9 +236,13 @@ function Vincent(){
       </section>
       <section className="surface report-results">
         <div className="section-title"><div><p className="eyebrow">Chi tiết đối soát</p><h2>Theo tài khoản nhận</h2></div><strong>{reports.data?money(reports.data.total):'—'}</strong></div>
-        {reports.isLoading?<Spinner/>:reports.data?.groups.some(g=>g.count>0)?reports.data.groups.filter(g=>g.count>0).sort((a,b)=>b.total-a.total).map(g=><div className="report-group" key={g.account.name}><div className="report-account"><div><strong>{g.account.name}</strong><small>{g.account.bank||'Tài khoản lịch sử'}</small></div><div className="report-total"><strong>{money(g.total)}</strong><small>{g.count} giao dịch</small></div></div><div className="table-scroll mobile-card-table"><table className="transfer-report-table"><thead><tr><th>Ngày chuyển</th><th>Nhà / Phòng</th><th>Nội dung chuyển khoản</th><th>Số tiền</th></tr></thead><tbody>{g.receipts.map(r=><tr key={r.id}><td>{r.transferAt}</td><td><strong>{r.houseCode} · {r.room}</strong></td><td className="memo-cell">{r.transferMemo}</td><td className="emphasis">{money(r.amount)}</td></tr>)}</tbody></table></div></div>):<Blank message="Không có giao dịch phù hợp với bộ lọc"/>}
+        {reports.isLoading?<Spinner/>:reports.data?.groups.some(g=>g.count>0)?reports.data.groups.filter(g=>g.count>0).sort((a,b)=>b.total-a.total).map(g=><details className="report-group" key={g.account.name}><summary className="report-account"><span className="report-account-copy"><strong>{g.account.name}</strong><small>{g.account.bank||'Tài khoản lịch sử'}</small></span><span className="report-account-side"><span className="report-total"><strong>{money(g.total)}</strong><small>{g.count} giao dịch</small></span><ChevronRight className="report-disclosure-icon" size={18}/></span></summary><div className="table-scroll mobile-card-table"><table className="transfer-report-table"><thead><tr><th>Ngày chuyển</th><th>Nhà / Phòng</th><th>Nội dung chuyển khoản</th><th>Số tiền</th></tr></thead><tbody>{g.receipts.map(r=><tr key={r.id}><td>{r.transferAt}</td><td><strong>{r.houseCode} · {r.room}</strong></td><td className="memo-cell">{r.transferMemo}</td><td className="emphasis">{money(r.amount)}</td></tr>)}</tbody></table></div></details>):<Blank message="Không có giao dịch phù hợp với bộ lọc"/>}
       </section>
       </>}
+      {reportView==='overpayments'&&<section className="surface report-overpayments">
+        <div className="report-intro"><div><p className="eyebrow">Kiểm soát thu vượt</p><h2>Danh sách phòng thu thừa</h2><p>Khoản thu thừa được tính riêng theo từng phòng, không bù trừ sang công nợ của phòng khác.</p></div><div className="overpayment-total"><small>Tổng thu thừa</small><strong>{overpaymentReports.data?money(overpaymentReports.data.total):'—'}</strong><span>{overpaymentReports.data?.count??0} phòng</span></div></div>
+        {overpaymentReports.isLoading?<Spinner/>:overpaymentReports.error?<p className="error-box">{errText(overpaymentReports.error)}</p>:overpaymentReports.data?.items.length?<div className="table-scroll mobile-card-table"><table className="overpayment-report-table"><thead><tr><th>Nhà / Phòng</th><th>Phải thu</th><th>Đã thu</th><th>Thu thừa</th></tr></thead><tbody>{overpaymentReports.data.items.map(row=><tr key={row.houseCode+'|'+row.room}><td><strong>{row.houseCode} · {row.room}</strong><small className="subline">{houseLabel(row.houseCode)}</small></td><td>{money(row.due)}</td><td>{money(row.paid)}</td><td className="emphasis overpayment-value">+{money(row.excess)}</td></tr>)}</tbody></table></div>:<Blank message="Không có phòng thu thừa trong kỳ này"/>}
+      </section>}
     </>}
 
     {tab==='assets'&&<Assets user={user} houses={meta.data?.houses||[]}/>}
